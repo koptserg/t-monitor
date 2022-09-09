@@ -339,7 +339,7 @@ void bme_ConfigSPI(void)
    * Confirm on board that this results in 1MHz spi clk.
    */
 //  baud_exponent = 15;
-  baud_exponent = 15;
+  baud_exponent = 17;
   baud_mantissa =  0;
 
   /* Configure SPI */

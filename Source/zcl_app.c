@@ -209,8 +209,8 @@ static void _delay_ms(uint16 milliSecs);
 #endif
 
 #if defined(TFT3IN5)
-static void TftRefresh(void);
-static void TfttestRefresh(void);
+//static void TftRefresh(void);
+static void TfttestRefresh(uint8 i);
 static void TftTimeDateWeek(void);
 static void TftStatus(uint8 temp_s);
 static void TftBindStatus(uint8 temp_s);
@@ -357,8 +357,10 @@ void zclApp_Init(byte task_id) {
   LCD_SCAN_DIR Lcd_ScanDir = SCAN_DIR_DFT;    //SCAN_DIR_DFT = D2U_L2R
   LCD_Init( Lcd_ScanDir, 1);
   GUI_Clear(WHITE);
-  zclApp_SetTimeDate();  
-  TftRefresh();
+  zclApp_SetTimeDate();
+//  TftRefresh();
+  TftTimeDateWeek(); // time, date, weekday
+  TftStatus(0); // status network device
 /*  
   GUI_Show(); 
   DEV_TIME sDev_time;
@@ -518,7 +520,8 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
           EpdRefresh();
 #endif
 #if defined(TFT3IN5)
-          TftRefresh();
+//          TftRefresh();
+          TfttestRefresh(bdev);
 #endif          
         }        
         osal_mem_free(BindRsp);
@@ -566,7 +569,8 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
       EpdRefresh();
 #endif
 #if defined(TFT3IN5)      
-      TftRefresh();
+//      TftRefresh();
+      TftLqi(temp_countReqLqi);
 #endif      
       if (temp_countReqLqi >=2){
         temp_countReqLqi = 0;
@@ -699,7 +703,8 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
                   EpdRefresh();
 #endif //  EPD3IN7 
 #if defined(TFT3IN5)                  
-                  TftRefresh();
+//                  TftRefresh();
+                  TftStatus(0); // update status network device
 #endif //  TFT3IN5                  
 #endif // LQI_REQ
                   IEN2 |= HAL_KEY_BIT4; // enable port1 int
@@ -781,7 +786,8 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)        
-        TftRefresh();
+//        TftRefresh();
+        TftTimeDateWeek(); // update time, date, weekday
 #endif        
       }
         return (events ^ APP_REPORT_CLOCK_EVT);
@@ -853,7 +859,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
           EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)          
-          TftRefresh();
+//          TftRefresh();
 #endif // TFT3IN5           
         }
         zclApp_Occupied = 1;
@@ -872,13 +878,12 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)        
-        TftRefresh();
+//        TftRefresh();
 #endif // TFT3IN5
         zclApp_Occupied = 0;
         zclApp_Occupied_OnOff = 0;
         zclGeneral_SendOnOff_CmdOff(zclApp_ThirdEP.EndPoint, &inderect_DstAddr, TRUE, bdb_getZCLFrameCounter());
         bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
-//        EpdRefresh();
         
         return (events ^ APP_MOTION_OFF_EVT);
     }
@@ -904,7 +909,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
 #if defined(TFT3IN5)
     if (events & APP_TFT_DELAY_EVT) {
         LREPMaster("APP_TFT_DELAY_EVT\r\n");
-        TfttestRefresh();
+//        TfttestRefresh();
         
         return (events ^ APP_TFT_DELAY_EVT);
     }
@@ -1208,7 +1213,8 @@ static void zclApp_SaveAttributesToNV(void) {
     EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)    
-    TftRefresh();
+//    TftRefresh();
+    TftTimeDateWeek(); // time, date, weekday
 #endif // TFT3IN5    
     zclApp_bh1750setMTreg();
     zclApp_StopReloadTimer();
@@ -1286,6 +1292,7 @@ static void EpdRefresh(void){
 #endif // EPD3IN7
 
 #if defined(TFT3IN5) 
+/*
 static void TftRefresh(void){
 //  if (EpdDetect == 1) {
     if(zclApp_Occupied == 1 || bdbAttributes.bdbNodeIsOnANetwork == 0) {
@@ -1293,6 +1300,7 @@ static void TftRefresh(void){
     }
 //  }
 }
+*/
 #endif // TFT3IN5
 
 #if defined(EPD3IN7)
@@ -1598,9 +1606,11 @@ static void TftLqi(uint8 temp_l){
   
   if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
     if (temp_Sender_shortAddr[temp_l] != 0xFFFE) {
-      if (temp_lqi[temp_l] != 255) { 
-        GUI_DrawRectangle(32-1, 128-1 + row, 32+24, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
+      if (temp_lqi[temp_l] != 255) {
+        GUI_DrawRectangle(64, 128 + row, 64+36, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
+        GUI_DisString_EN(64, 128 + row, lqi_string, &Font16, LCD_BACKGROUND, BLUE);  
         
+        GUI_DrawRectangle(32-1, 128-1 + row, 32+24, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );        
         if(temp_lqi[temp_l] > 40){
           GUI_Disbitmap(32, 128 + row , IMAGE_LQI_100, 25, 16, BLUE, 0);          
         } else if (temp_lqi[temp_l] <= 40 && temp_lqi[temp_l] > 30) {
@@ -1617,9 +1627,7 @@ static void TftLqi(uint8 temp_l){
       }
     } else {
       GUI_DrawRectangle(32-1, 128-1 + row, 64+36, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );      
-    }   
-    GUI_DrawRectangle(64, 128 + row, 64+36, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    GUI_DisString_EN(64, 128 + row, lqi_string, &Font16, LCD_BACKGROUND, BLUE);    
+    }     
   } else { // lanscape
 
   }
@@ -1810,13 +1818,13 @@ static void TftBattery(uint8 temp_b){
   }
 
   if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait    
-    GUI_DrawRectangle(148, 128 + row, 148+48, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    GUI_DisString_EN(148, 128 + row, perc_string, &Font16, LCD_BACKGROUND, BLUE);  
     
     if (old_bindClusterDev[temp_b] & 0x01){
       if (temp_Battery_PercentageRemainig[temp_b] != 0xFF) {
-        GUI_DrawRectangle(112-1, 128-1 + row, 112+24, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-        
+        GUI_DrawRectangle(148, 128 + row, 148+48, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
+        GUI_DisString_EN(148, 128 + row, perc_string, &Font16, LCD_BACKGROUND, BLUE); 
+    
+        GUI_DrawRectangle(112-1, 128-1 + row, 112+24, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );        
         if(temp_Battery_PercentageRemainig[temp_b]/2 > 75){
           GUI_Disbitmap(112, 128 + row , IMAGE_BATTERY_100, 25, 16, BLUE, 0);
         } else if (temp_Battery_PercentageRemainig[temp_b]/2 <= 75 && temp_Battery_PercentageRemainig[temp_b]/2 > 50) {
@@ -2424,14 +2432,16 @@ static void EpdPressure(uint8 temp_p){
 #endif
 
 #if defined(TFT3IN5)
-static void TfttestRefresh(void)
+static void TfttestRefresh(uint8 i)
 {     
-  TftTimeDateWeek(); // time, date, weekday
-  TftStatus(0); // status network device
+//  TftTimeDateWeek(); // time, date, weekday
+//  TftStatus(0); // status network device
+  
 // enable/disable display of values
 // bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
 //     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
-  for(uint8 i = 0; i <= 2; i++ ){ 
+  
+//  for(uint8 i = 0; i <= 2; i++ ){ 
       LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);
       
       TftBindStatus(i);  // status bind
@@ -2443,7 +2453,7 @@ static void TfttestRefresh(void)
       TftTemperature(i); // temperature
       TftHumidity(i);    // humidity
       TftPressure(i);    // pressure
-  }
+//  }
 
 }
 #endif
@@ -2523,7 +2533,7 @@ static void zclApp_OnOffCB(uint8 cmd)
   EpdRefresh();
 #endif //  EPD3IN7
 #if defined(TFT3IN5)  
-  TftRefresh();
+//  TftRefresh();
 #endif //  TFT3IN5
 }
 
@@ -2547,6 +2557,9 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
         save = 1;
         
         zclApp_RequestAddr(temp_Sender_shortAddr[y]);
+#if defined(TFT3IN5)      
+        TftNwk(i);
+#endif // TFT3IN5  
       }
   }
   
@@ -2565,6 +2578,9 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_Temperature_Sensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(2);
       old_bindClusterDev[i] |= BV(2);
+#if defined(TFT3IN5)      
+      TftTemperature(i);
+#endif // TFT3IN5      
     }
     if (pInMsg->clusterId == HUMIDITY && pInAttrReport->attrList[n].attrID == ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE){
       if (temp_HumiditySensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
@@ -2575,6 +2591,9 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_HumiditySensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(4);
       old_bindClusterDev[i] |= BV(4);
+#if defined(TFT3IN5)       
+      TftHumidity(i);
+#endif // TFT3IN5      
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE){
       if (temp_PressureSensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
@@ -2585,6 +2604,9 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_PressureSensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(3);
       old_bindClusterDev[i] |= BV(3);
+#if defined(TFT3IN5)      
+      TftPressure(i);
+#endif // TFT3IN5      
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_SCALE){
       temp_PressureSensor_ScaledValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
@@ -2600,22 +2622,31 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_bh1750IlluminanceSensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(1);
       old_bindClusterDev[i] |= BV(1);
+#if defined(TFT3IN5)      
+      TftIlluminance(i);
+#endif // TFT3IN5       
     }
     if (pInMsg->clusterId == POWER_CFG && pInAttrReport->attrList[n].attrID == ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING){
       temp_Battery_PercentageRemainig[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(0);
-      old_bindClusterDev[i] |= BV(0);      
+      old_bindClusterDev[i] |= BV(0); 
+#if defined(TFT3IN5)      
+      TftBattery(i);
+#endif // TFT3IN5       
     }
     if (pInMsg->clusterId == OCCUPANCY && pInAttrReport->attrList[n].attrID == ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY){
       temp_Occupied[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(5);
       old_bindClusterDev[i] |= BV(5);
+#if defined(TFT3IN5)      
+      TftOccupancy(i);
+#endif // TFT3IN5       
     }
 #if defined(EPD3IN7) 
     EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)    
-    TftRefresh();
+//    TftRefresh();
 #endif // TFT3IN5    
   }
 }
