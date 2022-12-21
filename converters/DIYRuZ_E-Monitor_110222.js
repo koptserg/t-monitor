@@ -12,22 +12,7 @@ const bind = async (endpoint, target, clusters) => {
 
 const ACCESS_STATE = 0b001, ACCESS_WRITE = 0b010, ACCESS_READ = 0b100;
 
-//const globalStore = require('zigbee-herdsman-converters/converters/store');
-
 const OneJanuary2000 = new Date('January 01, 2000 00:00:00 UTC+00:00').getTime();
-
-async function onEventSetLocalTime(type, data, device) {
-//    const nextLocalTimeUpdate = globalStore.getValue(device, 'nextLocalTimeUpdate');
-//    const forceTimeUpdate = nextLocalTimeUpdate == null || nextLocalTimeUpdate < new Date().getTime();
-
-//    if ((data.type === 'attributeReport' && data.cluster === 'genTime') || forceTimeUpdate) {
-      if ((data.type === 'attributeReport' && data.cluster === 'genTime')) {
-//        globalStore.putValue(device, 'nextLocalTimeUpdate', new Date().getTime() + 60 * 1000);
-        const endpoint = device.getEndpoint(1);
-        const time = Math.round((((new Date()).getTime() - OneJanuary2000) / 1000) + (((new Date()).getTimezoneOffset() * -1) * 60));
-        await endpoint.write('genTime', {time: time});
-    }
-}
 
 const withEpPreffix = (converter) => ({
     ...converter,
@@ -57,10 +42,6 @@ const fz = {
         cluster: 'genTime',
         type: ['attributeReport', 'readResponse'],
         convert: (model, msg, publish, options, meta) => {
-//          const firstEndpoint = meta.device.getEndpoint(1);
-//          const time = Math.round((((new Date()).getTime() - OneJanuary2000) / 1000) + (((new Date()).getTimezoneOffset() * -1) * 60));
-          // Time-master + synchronised
-//          firstEndpoint.write('genTime', {time: time});
           return {local_time: msg.data.localTime};
         },
     },
@@ -331,7 +312,6 @@ const device = {
             tz.change_period,
             toZigbeeConverters.factory_reset,
         ],
-        onEvent: onEventSetLocalTime,
         meta: {
             configureKey: 1,
             multiEndpoint: true,
