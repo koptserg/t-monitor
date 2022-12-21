@@ -11,6 +11,11 @@
 #include "zcl_app.h"
 #include "factory_reset.h"
 #include "commissioning.h"
+
+#include "epd3in7.h"
+
+#include "breakout.h"
+
 #include "Debug.h"
 
 #if defined ( MT_TASK )
@@ -29,6 +34,9 @@ const pTaskEventHandlerFn tasksArr[] = {macEventLoop,
                                         zcl_event_loop,
                                         bdb_event_loop,
                                         zclApp_event_loop,
+#if defined( TFT3IN5 )                                       
+                                        breakout_event_loop,
+#endif                                        
                                         zclFactoryResetter_loop,
                                         zclCommissioning_event_loop
                                         };
@@ -53,6 +61,9 @@ void osalInitTasks(void) {
     zcl_Init(taskID++);
     bdb_Init(taskID++);
     zclApp_Init(taskID++);
+#if defined( TFT3IN5 )     
+    breakout_Init(taskID++);
+#endif
     zclFactoryResetter_Init(taskID++);
     zclCommissioning_Init(taskID++);
 }

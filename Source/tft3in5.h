@@ -65,6 +65,7 @@ void LCD_SetCursor(POINT Xpoint, POINT Ypoint);
 void LCD_SetColor(COLOR Color ,POINT Xpoint, POINT Ypoint);
 void LCD_SetPointlColor(POINT Xpoint, POINT Ypoint, COLOR Color);
 void LCD_SetArealColor(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend,COLOR  Color);
+void LCD_SetArealColorWH(POINT Xstart, POINT Ystart, LENGTH w, LENGTH h, COLOR Color);
 void LCD_Clear(COLOR  Color);
 
 void DelayMs(unsigned int delaytime);

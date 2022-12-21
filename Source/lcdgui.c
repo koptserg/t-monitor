@@ -1,10 +1,14 @@
 
+#include "Debug.h"
 #include "lcdgui.h"
 #include "fonts.h"
 #include "tft3in5.h"
 #include "utils.h"
+#include "xpt2046.h"
 
 extern LCD_DIS sLCD_DIS;
+extern BUTTON sButton[];
+
 /******************************************************************************
   function:	Coordinate conversion
 ******************************************************************************/
@@ -54,6 +58,7 @@ void GUI_DrawPoint(POINT Xpoint, POINT Ypoint, COLOR Color,
       }
     }
   }
+  
 }
 
 /******************************************************************************
@@ -604,5 +609,67 @@ void GUI_Show(void)
   }
 }
 
+void initButton(uint8 i,
+ int16 x, int16 y, uint16 w, uint16 h,
+ uint16 outline, uint16 fill, uint16 textcolor,
+ char *label, uint8 textsize)
+{
+  // Tweak arguments and pass to the newer initButtonUL() function...
+  initButtonUL(i, x - (w / 2), y - (h / 2), w, h, outline, fill,
+    textcolor, label, textsize);
+}
 
+void initButtonUL(uint8 i,
+ int16 x1, int16 y1, uint16 w, uint16 h,
+ uint16 outline, uint16 fill, uint16 textcolor,
+ char *label, uint8 textsize)
+{
+  sButton[i].x1           = x1;
+  sButton[i].y1           = y1;
+  sButton[i].w            = w;
+  sButton[i].h            = h;
+  sButton[i].outlinecolor = outline;
+  sButton[i].fillcolor    = fill;
+  sButton[i].textcolor    = textcolor;
+  sButton[i].textsize     = textsize;
+  for (uint8 x=0; x<9; x++) {
+    sButton[i].label[x]     = label[x];
+  }
+}
 
+void drawButton(uint8 i, bool inverted) {
+  uint16 fill, outline, text;
+
+  if(!inverted) {
+    fill    = sButton[i].fillcolor;
+    outline = sButton[i].outlinecolor;
+    text    = sButton[i].textcolor;
+  } else {
+    fill    = sButton[i].textcolor;
+    outline = sButton[i].outlinecolor;
+    text    = sButton[i].fillcolor;
+  }
+
+  GUI_DrawRectangle(sButton[i].x1, sButton[i].y1, sButton[i].x1+sButton[i].w, sButton[i].y1+sButton[i].h, 
+                    fill, DRAW_FULL , DOT_PIXEL_DFT );
+  GUI_DrawRectangle(sButton[i].x1, sButton[i].y1, sButton[i].x1+sButton[i].w, sButton[i].y1+sButton[i].h, 
+                    outline, DRAW_EMPTY , DOT_PIXEL_DFT );
+
+  GUI_DisString_EN(sButton[i].x1 + (sButton[i].w/2) - (strlen(sButton[i].label) * 3 * sButton[i].textsize),
+                   sButton[i].y1 + (sButton[i].h/2) - (4 * sButton[i].textsize),
+                   sButton[i].label, &Font20, LCD_BACKGROUND, text);
+}
+
+extern TP_DRAW sTP_Draw;
+
+int8 pressButton(void){
+  for (uint8 i = 0; i<BUTTON_COUNT_MAX; i++) {
+            if (sButton[i].x1 < sTP_Draw.Xpoint && sTP_Draw.Xpoint < sButton[i].x1+sButton[i].w &&
+                sButton[i].y1 < sTP_Draw.Ypoint && sTP_Draw.Ypoint < sButton[i].y1+sButton[i].h)
+            {
+//              LREP("button=%d\r\n", i);
+              return i;
+            }
+  }
+  return -1;
+}

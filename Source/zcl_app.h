@@ -21,7 +21,7 @@ extern "C" {
 #define APP_READ_SENSORS_EVT            0x0002
 #define APP_REPORT_CLOCK_EVT            0x0004
 #define APP_MOTION_ON_EVT               0x0008
-//#define APP_REQ_BIND_EVT                0x0010   
+#define APP_REQ_BIND_EVT                0x0010 
 #define APP_MOTION_OFF_EVT              0x0020
 #define APP_MOTION_DELAY_EVT            0x0040
 #define APP_SAVE_ATTRS_EVT              0x0080
@@ -29,7 +29,11 @@ extern "C" {
 #define APP_EPD_DELAY_EVT               0x0100
 #endif //EPD3IN7
 #if defined(TFT3IN5)
-#define APP_TFT_DELAY_EVT               0x0100
+//#define APP_TFT_DELAY_EVT               0x0100   
+#define APP_TFT_TP_EVT                      0x0100
+#ifdef HAL_LCD_PWM_PORT1   
+#define APP_TFT_LED_PWM_EVT             0x8000
+#endif //HAL_LCD_PWM_PORT1   
 #endif //TFT3IN5
 #define APP_BH1750_DELAY_EVT            0x0200
 #define APP_REPORT_TEMPERATURE_EVT      0x0400
@@ -95,7 +99,6 @@ extern "C" {
 #define ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE 0xF004
   
 //#define ATTRID_GEN_BINARY_INPUT_PRESENTVALUE 0x55
-
 
 
 /*********************************************************************
@@ -171,6 +174,9 @@ extern CONST uint8 zclApp_AttrsFourthEPCount;
 extern const uint8 zclApp_ManufacturerName[];
 extern const uint8 zclApp_ModelId[];
 extern const uint8 zclApp_PowerSource;
+
+extern bool zcl_game;
+extern bool butt_quit;
 
 //extern uint8 zclApp_BatteryManu[];
 

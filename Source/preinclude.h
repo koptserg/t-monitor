@@ -50,7 +50,7 @@
 #define MT_SYS_FUNC
 #define MT_ZDO_FUNC
 #define MT_ZDO_MGMT
-#define INT_HEAP_LEN (2688 - 0x100 - 0x3 - 0x1E )
+#define INT_HEAP_LEN (2688 - 0x100 - 0x3 - 0x1F)
 #endif
 
 
@@ -69,7 +69,7 @@
 
 #if defined(HAL_BOARD_MONITOR)
 //#define POWER_SAVING
-#define DO_DEBUG_UART
+//#define DO_DEBUG_UART
 
 #elif defined(HAL_BOARD_CHDTECH_DEV)
 // #define DO_DEBUG_UART
@@ -110,6 +110,7 @@
 #define HAL_LCD_TPIRQ_PIN  4  // TFT TP_IRQ
 #define HAL_LCD_PWM_PORT 1
 #define HAL_LCD_PWM_PIN  4  // TFT PWM
+#define HAL_LCD_PWM_PORT1   // enable TFT PWM
 #endif
 //i2c bh1750
 #define OCM_CLK_PORT 0
@@ -126,6 +127,11 @@
 #if !defined(LQI_REQ) && !defined(BIND_REQ)
 #define INT_HEAP_LEN (2685 - 0x4B - 0xBB)
 #endif
+#endif
+
+#ifndef DO_DEBUG_UART
+#define HAL_UART TRUE
+#define HAL_UART_DMA 2
 #endif
 
 #ifdef DO_DEBUG_MT
@@ -158,10 +164,12 @@
 
 //#define HAL_KEY_P0_INPUT_PINS BV(0)
 //#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE
-#ifdef TFT3IN5
+
+//#ifdef TFT3IN5
 #define HAL_KEY_P0_INPUT_PINS BV(4)
-#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE
-#endif
+//#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE
+#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_FALLING_EDGE
+//#endif
 
 #define HAL_KEY_P1_INPUT_PINS BV(3)
 #define HAL_KEY_P1_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE

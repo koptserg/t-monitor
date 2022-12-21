@@ -1,9 +1,18 @@
 
 #include <stdlib.h>
 
+#ifdef TFT3IN5
+
 #include "tft3in5.h"
 #include "bme280spi.h" // HalLcd_HW_Control(), HalLcd_HW_Write()
 #include "utils.h"
+
+#ifndef HAL_LCD_PWM_PORT
+#define HAL_LCD_PWM_PORT 1
+#endif
+#ifndef HAL_LCD_PWM_PIN
+#define HAL_LCD_PWM_PIN  4  // TFT PWM
+#endif
 
 LCD_DIS sLCD_DIS;
 /*******************************************************************************
@@ -341,6 +350,16 @@ void LCD_SetArealColor(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend, COLOR
     }
 }
 
+void LCD_SetArealColorWH(POINT Xstart, POINT Ystart, LENGTH w, LENGTH h, COLOR Color)
+{
+    POINT Xend = Xstart + w;
+    POINT Yend = Ystart + h;
+    if((Xend > Xstart) && (Yend > Ystart)) {
+        LCD_SetWindow(Xstart , Ystart , Xend , Yend  );
+        LCD_SetColor ( Color , Xend - Xstart, Yend - Ystart);
+    }
+}
+
 /********************************************************************************
 function:
 			Clear screen
@@ -349,3 +368,5 @@ void LCD_Clear(COLOR  Color)
 {
     LCD_SetArealColor(0, 0, sLCD_DIS.LCD_Dis_Column , sLCD_DIS.LCD_Dis_Page , Color);
 }
+
+#endif //end TFT3IN5

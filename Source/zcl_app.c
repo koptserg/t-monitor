@@ -41,18 +41,6 @@
 #include "utils.h"
 #include "version.h"
 
-#ifdef EPD2IN9
-#include "epd2in9.h"
-#endif
-#ifdef EPD2IN9V2
-#include "epd2in9v2.h"
-#endif
-#ifdef EPD2IN13V2
-#include "epd2in13v2.h"
-#endif
-#ifdef EPD1IN54V2
-#include "epd1in54v2.h"
-#endif
 #ifdef EPD3IN7
 #include "epd3in7.h"
 #include "epdpaint.h"
@@ -62,10 +50,12 @@
 #include "tft3in5.h"
 #include "xpt2046.h"
 #include "lcdgui.h"
+#include "breakout.h"
 #endif
 
+#if defined(EPD3IN7)
 #define HAL_LCD_BUSY BNAME(HAL_LCD_BUSY_PORT, HAL_LCD_BUSY_PIN)
-
+#endif
 /*********************************************************************
  * MACROS
  */
@@ -165,6 +155,15 @@ uint16 zlcApp_ExtAddr = 0xFFFE;
 
 afAddrType_t inderect_DstAddr = {.addrMode = (afAddrMode_t)AddrNotPresent, .endPoint = 0, .addr.shortAddr = 0};
 
+#if defined(TFT3IN5)
+extern TP_DRAW sTP_Draw;
+bool zcl_tp = 1;
+#endif //TFT3IN5
+
+//#define BUTTON_COUNT_MAX  4
+//extern BUTTON sButton[BUTTON_COUNT_MAX];
+//bool zcl_game = 0;
+//bool butt_pause = 0;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -193,6 +192,7 @@ static void zclApp_MotionPullUpDown(void);
 static void zclApp_EpdUpdateClock(void);
 static void EpdRefresh(void);
 static void EpdtestRefresh(void);
+static void zclApp_EpdSensors(uint8 i);
 static void EpdTimeDateWeek(void);
 static void EpdStatus(uint8 temp_s);
 static void EpdBindStatus(uint8 temp_s);
@@ -217,6 +217,9 @@ static void TftBindStatus(uint8 temp_s);
 static void TftLqi(uint8 temp_l);
 static void TftNwk(uint8 temp_n);
 static void TftBattery(uint8 temp_b);
+#if defined(HAL_LCD_PWM_PORT1)
+static void InitLedPWM(uint8 level);
+#endif
 #endif
 
 #ifdef MT_ZDO_MGMT
@@ -288,7 +291,9 @@ void zclApp_MotionPullUpDown(void) {
 
 void zclApp_Init(byte task_id) {
     zclApp_RestoreAttributesFromNV();
-    
+#ifdef HAL_LCD_PWM_PORT1    
+    InitLedPWM(10);
+#endif    
     P1SEL &= ~BV(0); // Set P1_0 to GPIO
 //    IO_FUNC_PORT_PIN(MOTION_POWER_PORT, MOTION_POWER_PIN, IO_GIO); // Set P1_0 to GPIO
     P1DIR |= BV(0); // P1_0 output
@@ -359,8 +364,12 @@ void zclApp_Init(byte task_id) {
   GUI_Clear(WHITE);
   zclApp_SetTimeDate();
 //  TftRefresh();
-  TftTimeDateWeek(); // time, date, weekday
-  TftStatus(0); // status network device
+  if (!zcl_game){
+    TftTimeDateWeek(); // time, date, weekday
+    TftStatus(0); // status network device
+  } else {
+//    drawWallTiles();
+  }
 /*  
   GUI_Show(); 
   DEV_TIME sDev_time;
@@ -369,11 +378,12 @@ void zclApp_Init(byte task_id) {
   sDev_time.Sec = 56;
   GUI_Showtime(200, 150, 327, 197, &sDev_time, RED);
 */
-/*
+
   TP_Init( Lcd_ScanDir );
-  TP_GetAdFac();
-  TP_Dialog();
-*/
+  TP_GetAdFac(); // default calibration factor
+//  TP_Dialog();
+//  TP_Adjust();
+
 #endif    
 #if defined(EPD3IN7)
   // check epd
@@ -396,9 +406,10 @@ void zclApp_Init(byte task_id) {
     }
     // epd full screen
     EpdInitFull();
-    EpdSetFrameMemoryBase(IMAGE_DATA, zclApp_Config.HvacUiDisplayMode & 0x01);
-    EpdDisplayFrame();
-    _delay_ms(2000);
+//    EpdDisplayFrame();
+//    EpdSetFrameMemoryBase(IMAGE_DATA, zclApp_Config.HvacUiDisplayMode & 0x01);
+//    EpdDisplayFrame();
+//    _delay_ms(2000);
 
     EpdClearFrameMemory(zclApp_color);
     EpdDisplayFrame();
@@ -412,7 +423,11 @@ void zclApp_Init(byte task_id) {
     EpdClearFrameMemory(zclApp_color);
     EpdDisplayFramePartial();
 
-    zclApp_SetTimeDate();  
+    zclApp_SetTimeDate();
+//    EpdTimeDateWeek(); // time, date, weekday
+//    EpdTimeDateWeek(); // time, date, weekday
+//    EpdStatus(0); // status network device
+//    EpdStatus(0); // status network device
     EpdRefresh();
 
   }
@@ -500,8 +515,8 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
 //          LREPMaster("BIND_BIND_BIND\r\n");
           temp_bindingStartIndex[bdev] = temp_bindingStartIndex[bdev] +3;
           temp_countReqBind = bdev;
-          zclApp_RequestBind();
-//          osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 1000);
+//          zclApp_RequestBind();
+          osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
         } else {
           LREPMaster("BIND_BIND_0\r\n");
           temp_bindingCount[bdev] = 0;
@@ -518,10 +533,13 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
           }
 #if defined(EPD3IN7)
           EpdRefresh();
+//          EpdtestRefresh(bdev);
 #endif
 #if defined(TFT3IN5)
 //          TftRefresh();
-          TfttestRefresh(bdev);
+          if (!zcl_game){
+            TfttestRefresh(bdev);
+          }
 #endif          
         }        
         osal_mem_free(BindRsp);
@@ -567,10 +585,14 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
       osal_mem_free(LqRsp);      
 #if defined(EPD3IN7)      
       EpdRefresh();
+//      EpdLqi(temp_countReqLqi);
+//      EpdLqi(temp_countReqLqi);
 #endif
 #if defined(TFT3IN5)      
 //      TftRefresh();
-      TftLqi(temp_countReqLqi);
+      if (!zcl_game){
+        TftLqi(temp_countReqLqi);
+      }
 #endif      
       if (temp_countReqLqi >=2){
         temp_countReqLqi = 0;
@@ -647,25 +669,26 @@ void zclApp_RequestBind(void){
 
 #if defined(EPD3IN7)
 static void zclApp_EpdUpdateClock(void) {
-        if (EpdDetect == 1) {
+//        if (EpdDetect == 1) {
           if (zclApp_Config.HvacUiDisplayMode & 0x01){
               zclApp_color = 0xFF;
           } else {
               zclApp_color = 0x00;
           }
             // epd full screen
-            EpdInitFull();
-            EpdClearFrameMemory(zclApp_color);
-            EpdDisplayFrame();
-            EpdClearFrameMemory(zclApp_color);
-            EpdDisplayFrame();
+          EpdInitFull();
+          EpdClearFrameMemory(zclApp_color);
+          EpdDisplayFrame();
+          EpdClearFrameMemory(zclApp_color);
+          EpdDisplayFrame();
             // epd partial screen
-            EpdInitPartial();
-            EpdClearFrameMemory(zclApp_color);
-            EpdDisplayFramePartial();
-            EpdClearFrameMemory(zclApp_color);
-            EpdDisplayFramePartial();        
-        }
+          EpdInitPartial();
+          EpdClearFrameMemory(zclApp_color);
+          EpdDisplayFramePartial();
+          EpdClearFrameMemory(zclApp_color);
+          EpdDisplayFramePartial();
+          
+//        }
         
 }
 #endif
@@ -701,10 +724,14 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
 //                  temp_lqi[0] = 255;
 #if defined(EPD3IN7)                  
                   EpdRefresh();
+//                  EpdStatus(0); // status network device
+//                  EpdStatus(0); // status network device
 #endif //  EPD3IN7 
 #if defined(TFT3IN5)                  
 //                  TftRefresh();
-                  TftStatus(0); // update status network device
+                  if (!zcl_game){
+                    TftStatus(0); // update status network device
+                  }
 #endif //  TFT3IN5                  
 #endif // LQI_REQ
                   IEN2 |= HAL_KEY_BIT4; // enable port1 int
@@ -734,13 +761,13 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         return (events ^ SYS_EVENT_MSG);
     }
 #ifdef BIND_REQ
-/*    
+   
     if (events & APP_REQ_BIND_EVT) {
         LREPMaster("APP_REQ_BIND_EVT\r\n");
         zclApp_RequestBind();
         return (events ^ APP_REQ_BIND_EVT);
     }
-*/
+
 #endif 
     if (events & APP_REPORT_CLOCK_EVT) {
       LREPMaster("APP_REPORT_CLOCK_EVT\r\n");
@@ -775,19 +802,31 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
           temp_bindingStartIndex[temp_countReqBind] = 0;
         }
         temp_bindClusterDev[temp_countReqBind] = 0x00;
-        zclApp_RequestBind();
+//        zclApp_RequestBind();
+        osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
 #endif 
 #if defined(EPD3IN7)        
         fullupdate_hour = fullupdate_hour +1;
         if (fullupdate_hour == 5){ // over 5 min clear          
           zclApp_EpdUpdateClock();          
           fullupdate_hour = 0;
+/*          
+          EpdStatus(0); // status network device
+          EpdStatus(0); // status network device
+          for(uint8 i = 0; i <= 2; i++ ){
+            EpdtestRefresh(i);
+          }
+*/          
         }
+//        EpdTimeDateWeek(); // update time, date, weekday
+//        EpdTimeDateWeek(); // update time, date, weekday        
         EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)        
 //        TftRefresh();
-        TftTimeDateWeek(); // update time, date, weekday
+        if (!zcl_game){
+          TftTimeDateWeek(); // update time, date, weekday
+        }
 #endif        
       }
         return (events ^ APP_REPORT_CLOCK_EVT);
@@ -824,7 +863,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
            
         return (events ^ APP_REPORT_ILLUMINANCE_EVT);
     }
-    
+   
     if (events & APP_REPORT_BATTERY_EVT) {
         LREPMaster("APP_REPORT_BATTERY_EVT\r\n");
         report = 0;
@@ -854,19 +893,12 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         LREPMaster("MOTION_START_DELAY\r\n");
         //report
         if (zclApp_Occupied == 0) {
-          zclApp_Occupied = 1;
-#if defined(EPD3IN7)          
-          EpdRefresh();
-#endif // EPD3IN7
-#if defined(TFT3IN5)          
-//          TftRefresh();
-#endif // TFT3IN5           
+          zclApp_Occupied = 1;        
         }
         zclApp_Occupied = 1;
         zclApp_Occupied_OnOff = 1;
         zclGeneral_SendOnOff_CmdOn(zclApp_ThirdEP.EndPoint, &inderect_DstAddr, TRUE, bdb_getZCLFrameCounter());
         bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
-//        EpdRefresh();
         
         return (events ^ APP_MOTION_ON_EVT);
     }
@@ -874,12 +906,6 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
     if (events & APP_MOTION_OFF_EVT) {
         LREPMaster("APP_MOTION_OFF_EVT\r\n");
         //report
-#if defined(EPD3IN7)        
-        EpdRefresh();
-#endif // EPD3IN7
-#if defined(TFT3IN5)        
-//        TftRefresh();
-#endif // TFT3IN5
         zclApp_Occupied = 0;
         zclApp_Occupied_OnOff = 0;
         zclGeneral_SendOnOff_CmdOff(zclApp_ThirdEP.EndPoint, &inderect_DstAddr, TRUE, bdb_getZCLFrameCounter());
@@ -907,11 +933,29 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
     }
 #endif // EPD3IN7
 #if defined(TFT3IN5)
-    if (events & APP_TFT_DELAY_EVT) {
-        LREPMaster("APP_TFT_DELAY_EVT\r\n");
+//    if (events & APP_TFT_DELAY_EVT) {
+//        LREPMaster("APP_TFT_DELAY_EVT\r\n");
 //        TfttestRefresh();
         
-        return (events ^ APP_TFT_DELAY_EVT);
+//        return (events ^ APP_TFT_DELAY_EVT);
+//    }
+    
+    if (events & APP_TFT_TP_EVT) {
+//        LREPMaster("APP_TFT_TP_EVT\r\n");
+          uint8 press_down = TP_Scan(0);
+          LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
+          if (!zcl_game){
+            zcl_game = 1;
+            breakout_start();
+          } else {
+            keyprocessing();
+            if (!zcl_game) {
+              GUI_Clear(WHITE);
+              TftStatus(0);
+              TftTimeDateWeek();
+            }           
+          }
+        return (events ^ APP_TFT_TP_EVT);
     }
 #endif // TFT3IN5     
     if (events & APP_BH1750_DELAY_EVT) {
@@ -933,18 +977,27 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
 }
 
 static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
-    LREP("zclApp_HandleKeys portAndAction=0x%X keyCode=0x%X\r\n", portAndAction, keyCode);
+//    LREP("zclApp_HandleKeys portAndAction=0x%X keyCode=0x%X\r\n", portAndAction, keyCode);
     zclFactoryResetter_HandleKeys(portAndAction, keyCode);
-    zclCommissioning_HandleKeys(portAndAction, keyCode);
+    zclCommissioning_HandleKeys(portAndAction, keyCode); 
+    
     if (portAndAction & HAL_KEY_PRESS) {
-        LREPMaster("Key press\r\n");
+//        LREPMaster("Key press\r\n");
     }
 
     bool contact = portAndAction & HAL_KEY_PRESS ? TRUE : FALSE;
-    uint8 endPoint = 0;
     if (portAndAction & HAL_KEY_PORT0) {
         LREPMaster("Key press PORT0\r\n");
-        
+#if defined(TFT3IN5)        
+        if (contact){
+          if (zcl_tp){
+            osal_start_timerEx(zclApp_TaskID, APP_TFT_TP_EVT, 10);
+          }
+//          zcl_tp = 0;
+        } else {
+//          zcl_tp = 1;
+        }
+#endif //TFT3IN5
     } else if (portAndAction & HAL_KEY_PORT1) {     
         LREPMaster("Key press PORT1\r\n");
         if (!contact) {
@@ -977,7 +1030,7 @@ static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
 //          IEN2 |= HAL_KEY_BIT4; // enable port1 int
        }
      }
-     LREP("contact=%d endpoint=%d\r\n", contact, endPoint);
+     LREP("contact=%d\r\n", contact);
      uint16 alarmStatus = 0;
      if (!contact) {
         alarmStatus |= BV(0);
@@ -1038,21 +1091,14 @@ static void zclApp_ReadSensors(void) {
         break;
     case 9: 
 #ifdef BIND_REQ
-        temp_countReqBind = 0;
-        temp_bindingCount[temp_countReqBind] = 0;
-        temp_bindingStartIndex[temp_countReqBind] = 0;
-        temp_bindClusterDev[temp_countReqBind] = 0x00;
-//        old_bindClusterDev[temp_countReqBind] = 0x00;
-        zclApp_RequestBind();
+//        temp_countReqBind = 0;
+//        temp_bindingCount[temp_countReqBind] = 0;
+//        temp_bindingStartIndex[temp_countReqBind] = 0;
+//        temp_bindClusterDev[temp_countReqBind] = 0x00;
+//        zclApp_RequestBind();
+//      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
 #endif
         break;
-/*        
-    case 10:      
-#ifdef IEEE_ADDR_REQ
-        zclApp_RequestAddr();
-#endif
-        break;
-*/
     default:
         osal_stop_timerEx(zclApp_TaskID, APP_READ_SENSORS_EVT);
         osal_clear_event(zclApp_TaskID, APP_READ_SENSORS_EVT);
@@ -1089,19 +1135,19 @@ static void zclApp_bh1750ReadLumosity(void) {
       illum = (zclApp_bh1750IlluminanceSensor_MeasuredValue - old_bh1750IlluminanceSensor_MeasuredValue);
     }
     if (illum > zclApp_Config.MsIlluminanceMinAbsoluteChange || report == 1){ // 10 lux
-//      if (temp_bh1750IlluminanceSensor_MeasuredValue[0] > zclApp_bh1750IlluminanceSensor_MeasuredValue){
-//        zclApp_EpdUpDown &= ~BV(0); // down
-//      } else {
-//        zclApp_EpdUpDown |=  BV(0); // up
-//      }
-//      temp_bh1750IlluminanceSensor_MeasuredValue[0] = zclApp_bh1750IlluminanceSensor_MeasuredValue;
       old_bh1750IlluminanceSensor_MeasuredValue = zclApp_bh1750IlluminanceSensor_MeasuredValue;
       bdb_RepChangedAttrValue(zclApp_FourthEP.EndPoint, ILLUMINANCE, ATTRID_MS_ILLUMINANCE_MEASURED_VALUE);
-#if defined(EPD3IN7)
-      EpdRefresh();
-#endif // EPD3IN7
     }
-//    LREP("bh1750IlluminanceSensor_MeasuredValue value=%X\r\n", zclApp_bh1750IlluminanceSensor_MeasuredValue);
+#ifdef HAL_LCD_PWM_PORT1
+    uint8 levelPWM = 0;
+    if (zclApp_bh1750IlluminanceSensor_MeasuredValue > 220){
+      levelPWM = 220;
+    } else {
+      levelPWM = (uint8)zclApp_bh1750IlluminanceSensor_MeasuredValue;
+    }
+    InitLedPWM(254-levelPWM);
+#endif
+    LREP("bh1750IlluminanceSensor_MeasuredValue value=%X\r\n", zclApp_bh1750IlluminanceSensor_MeasuredValue);
 }
 
 static void zclApp_ReadBME280Temperature(void) {
@@ -1124,9 +1170,6 @@ static void zclApp_ReadBME280Temperature(void) {
 //          temp_Temperature_Sensor_MeasuredValue[0] = zclApp_Temperature_Sensor_MeasuredValue;
           old_Temperature_Sensor_MeasuredValue = zclApp_Temperature_Sensor_MeasuredValue;
           bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, TEMP, ATTRID_MS_TEMPERATURE_MEASURED_VALUE);
-#if defined(EPD3IN7)          
-          EpdRefresh();
-#endif // EPD3IN7
         }        
 }
 
@@ -1154,9 +1197,6 @@ static void zclApp_ReadBME280Pressure(void) {
           old_PressureSensor_MeasuredValue = zclApp_PressureSensor_MeasuredValue;
           old_PressureSensor_ScaledValue = zclApp_PressureSensor_ScaledValue;
           bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, PRESSURE, ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE);
-#if defined(EPD3IN7)
-          EpdRefresh();
-#endif // EPD3IN7
         }
 }
 
@@ -1180,9 +1220,6 @@ static void zclApp_ReadBME280Humidity(void) {
 //          temp_HumiditySensor_MeasuredValue[0] = zclApp_HumiditySensor_MeasuredValue;
           old_HumiditySensor_MeasuredValue = zclApp_HumiditySensor_MeasuredValue;
           bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HUMIDITY, ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE);
-#if defined(EPD3IN7)          
-          EpdRefresh();
-#endif // EPD3IN7
         }
 }
 
@@ -1209,12 +1246,16 @@ static void zclApp_SaveAttributesToNV(void) {
     
     osal_setClock(zclApp_GenTime_TimeUTC);
 #if defined(EPD3IN7)     
-    zclApp_EpdUpdateClock();   
+//    zclApp_EpdUpdateClock();  
+//    EpdTimeDateWeek(); // update time, date, weekday
+//    EpdTimeDateWeek(); // update time, date, weekday
     EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)    
 //    TftRefresh();
-    TftTimeDateWeek(); // time, date, weekday
+    if (!zcl_game){
+      TftTimeDateWeek(); // time, date, weekday
+    }
 #endif // TFT3IN5    
     zclApp_bh1750setMTreg();
     zclApp_StopReloadTimer();
@@ -1281,12 +1322,12 @@ static void zclApp_bh1750setMTreg(void) {
     }
 }
 
-#if defined(EPD3IN7) 
+#if defined(EPD3IN7)
 static void EpdRefresh(void){
   if (EpdDetect == 1) {
-    if(zclApp_Occupied == 1 || bdbAttributes.bdbNodeIsOnANetwork == 0) {
+//    if(zclApp_Occupied == 1 || bdbAttributes.bdbNodeIsOnANetwork == 0) {
       osal_start_timerEx(zclApp_TaskID, APP_EPD_DELAY_EVT, 2000);
-    }
+//    }
   }
 }
 #endif // EPD3IN7
@@ -1390,6 +1431,9 @@ static void TftTimeDateWeek(void){
 
 #if defined(EPD3IN7)
 static void EpdTimeDateWeek(void){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
+  
   // clock init Firmware build date 20/08/2021 13:47
   // Update RTC and get new clock values
   osalTimeUpdate();
@@ -1478,7 +1522,9 @@ static void EpdTimeDateWeek(void){
     PaintDrawStringAt(0, 0, day_string, &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 48, 57, PaintGetWidth(), PaintGetHeight());
   }
-
+//  EpdRefresh();
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -1505,6 +1551,9 @@ static void TftStatus(uint8 temp_s){
 
 #if defined(EPD3IN7)
 static void EpdStatus(uint8 temp_s){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
+  
   uint8 row = temp_s *120;
   
   //status network
@@ -1545,6 +1594,8 @@ static void EpdStatus(uint8 temp_s){
     PaintDrawVerticalLine(0, 0, 240, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 8, 216, PaintGetWidth(), PaintGetHeight());    
   }
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -1568,6 +1619,8 @@ static void TftBindStatus(uint8 temp_s){
 
 #if defined(EPD3IN7)
 static void EpdBindStatus(uint8 temp_s){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
     //status bind
   uint8 row = temp_s *120;
   char* bind_string = " ";
@@ -1587,6 +1640,8 @@ static void EpdBindStatus(uint8 temp_s){
   } else { // landscape    
     
   }
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -1637,6 +1692,8 @@ static void TftLqi(uint8 temp_l){
 
 #if defined(EPD3IN7)
 static void EpdLqi(uint8 temp_l){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
 #ifdef LQI_REQ  
   // LQI 
   uint8 row = temp_l *120;
@@ -1712,6 +1769,8 @@ static void EpdLqi(uint8 temp_l){
     }
   }
 #endif  //LQI_REQ
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif  // EPD3IN7
 
@@ -1753,7 +1812,9 @@ static void TftNwk(uint8 temp_n){
 #endif
 
 #if defined(EPD3IN7)
-static void EpdNwk(uint8 temp_n){  
+static void EpdNwk(uint8 temp_n){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);  
   // nwkDevAddress, nwkPanId, nwkLogicalChannel
     uint8 row = temp_n *120;
     char nwk_string[] = {' ', ' ', ' ', ' ', ' ', ' ', '\0'};
@@ -1800,6 +1861,8 @@ static void EpdNwk(uint8 temp_n){
     PaintDrawStringAt(0, 0, nwk_string, &Font16, COLORED); 
     EpdSetFrameMemoryXY(PaintGetImage(), 256, 216, PaintGetWidth(), PaintGetHeight()); 
   }
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -1848,6 +1911,8 @@ static void TftBattery(uint8 temp_b){
 
 #if defined(EPD3IN7)
 static void EpdBattery(uint8 temp_b){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
   //percentage
   uint8 row = temp_b *120;
   char perc_string[] = {' ', ' ', ' ', ' ', '\0'};
@@ -1913,6 +1978,8 @@ static void EpdBattery(uint8 temp_b){
       }
     }
   }
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -1940,6 +2007,8 @@ static void TftOccupancy(uint8 temp_oc){
 
 #if defined(EPD3IN7)
 static void EpdOccupancy(uint8 temp_oc){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
   // Occupancy
   char* occup_string = "";
 
@@ -1987,6 +2056,8 @@ static void EpdOccupancy(uint8 temp_oc){
       EpdSetFrameMemoryImageXY(IMAGE_MOTION,     144, 74, 64, 64, zclApp_Config.HvacUiDisplayMode & 0x01);
     }
   }
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -2033,6 +2104,8 @@ static void TftIlluminance(uint8 temp_i){
 
 #if defined(EPD3IN7)
 static void EpdIlluminance(uint8 temp_i){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
   //Illuminance
   uint8 row = temp_i *120;
   char illum_string[] = {' ',' ', ' ', ' ', ' ', '\0'};
@@ -2096,6 +2169,8 @@ static void EpdIlluminance(uint8 temp_i){
       EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 216, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
     }
   }
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 
 }
 #endif
@@ -2143,6 +2218,8 @@ static void TftTemperature(uint8 temp_t){
 
 #if defined(EPD3IN7)
 static void EpdTemperature(uint8 temp_t){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
   //temperature
   uint8 row = temp_t *120;
   char temp_string[] = {' ', ' ', ' ', ' ', ' ', '\0'};
@@ -2206,7 +2283,8 @@ static void EpdTemperature(uint8 temp_t){
       EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 160, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
     }
   }
-
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -2253,6 +2331,8 @@ static void TftHumidity(uint8 temp_h){
 
 #if defined(EPD3IN7)
 static void EpdHumidity(uint8 temp_h){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
   //humidity
   uint8 row = temp_h * 120;
   char hum_string[] = {' ', ' ', ' ', ' ', ' ', '\0'};
@@ -2308,15 +2388,16 @@ static void EpdHumidity(uint8 temp_h){
     PaintDrawStringAt(0, 0, "Humidity", &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 72, 300, PaintGetWidth(), PaintGetHeight());
     EpdSetFrameMemoryImageXY(IMAGE_HUMIDITY, 72, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & 0x01);
-  if (zclApp_EpdUpDown[temp_h] & 0x10){
-    EpdSetFrameMemoryImageXY(IMAGE_UP, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-    EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-  } else {
-    EpdSetFrameMemoryImageXY(IMAGE_DOWN, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-    EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+    if (zclApp_EpdUpDown[temp_h] & 0x10){
+      EpdSetFrameMemoryImageXY(IMAGE_UP, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+    } else {
+      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+    }
   }
-  }
-
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
@@ -2363,6 +2444,8 @@ static void TftPressure(uint8 temp_p){
 
 #if defined(EPD3IN7)
 static void EpdPressure(uint8 temp_p){
+//  EpdReset(); //disable sleep EPD
+//  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
   //pressure
   uint8 row = temp_p*120;
   char pres_string[] = {' ', ' ', ' ', ' ', ' ', ' ', '\0'};
@@ -2427,16 +2510,14 @@ static void EpdPressure(uint8 temp_p){
       EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 48, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
     }
   }
-
+//  EpdDisplayFramePartial();
+//  EpdSleep();
 }
 #endif
 
 #if defined(TFT3IN5)
 static void TfttestRefresh(uint8 i)
-{     
-//  TftTimeDateWeek(); // time, date, weekday
-//  TftStatus(0); // status network device
-  
+{       
 // enable/disable display of values
 // bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
 //     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
@@ -2466,13 +2547,20 @@ static void EpdtestRefresh(void)
   
   EpdTimeDateWeek(); // time, date, weekday
   EpdStatus(0); // status network device
+  
 // enable/disable display of values
 // bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
 //     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
   for(uint8 i = 0; i <= 2; i++ ){ 
-      LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);
-      
-      EpdBindStatus(i);  // status bind
+    LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);
+    zclApp_EpdSensors(i);
+  }
+  EpdDisplayFramePartial();
+  EpdSleep();
+}
+
+static void zclApp_EpdSensors(uint8 i) { 
+      EpdBindStatus(i);  // status bind   
       EpdLqi(i);         // lqi
       EpdBattery(i);     // percentage battery
       EpdNwk(i);         // nwk
@@ -2481,11 +2569,6 @@ static void EpdtestRefresh(void)
       EpdTemperature(i); // temperature
       EpdHumidity(i);    // humidity
       EpdPressure(i);    // pressure
-  }
-
-  EpdDisplayFramePartial();
-
-  EpdSleep();
 }
 #endif
 
@@ -2557,9 +2640,15 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
         save = 1;
         
         zclApp_RequestAddr(temp_Sender_shortAddr[y]);
-#if defined(TFT3IN5)      
-        TftNwk(i);
-#endif // TFT3IN5  
+#if defined(TFT3IN5) 
+        if (!zcl_game){
+          TftNwk(i);
+        }
+#endif // TFT3IN5
+#if defined(EPD3IN7)      
+//        EpdNwk(i);
+//        EpdNwk(i);
+#endif // EPD3IN7  
       }
   }
   
@@ -2578,9 +2667,15 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_Temperature_Sensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(2);
       old_bindClusterDev[i] |= BV(2);
-#if defined(TFT3IN5)      
-      TftTemperature(i);
-#endif // TFT3IN5      
+#if defined(TFT3IN5)
+      if (!zcl_game){      
+        TftTemperature(i);
+      }
+#endif // TFT3IN5
+#if defined(EPD3IN7)      
+//      EpdTemperature(i);
+//      EpdTemperature(i);
+#endif // EPD3IN7        
     }
     if (pInMsg->clusterId == HUMIDITY && pInAttrReport->attrList[n].attrID == ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE){
       if (temp_HumiditySensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
@@ -2591,9 +2686,15 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_HumiditySensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(4);
       old_bindClusterDev[i] |= BV(4);
-#if defined(TFT3IN5)       
-      TftHumidity(i);
-#endif // TFT3IN5      
+#if defined(TFT3IN5) 
+      if (!zcl_game){      
+        TftHumidity(i);
+      }
+#endif // TFT3IN5  
+#if defined(EPD3IN7)       
+//      EpdHumidity(i);
+//      EpdHumidity(i);
+#endif // EPD3IN7 
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE){
       if (temp_PressureSensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
@@ -2604,9 +2705,15 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_PressureSensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(3);
       old_bindClusterDev[i] |= BV(3);
-#if defined(TFT3IN5)      
-      TftPressure(i);
+#if defined(TFT3IN5)
+      if (!zcl_game){      
+        TftPressure(i);
+      }
 #endif // TFT3IN5      
+#if defined(EPD3IN7)      
+//      EpdPressure(i);
+//      EpdPressure(i);
+#endif // EPD3IN7   
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_SCALE){
       temp_PressureSensor_ScaledValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
@@ -2622,25 +2729,43 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_bh1750IlluminanceSensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(1);
       old_bindClusterDev[i] |= BV(1);
-#if defined(TFT3IN5)      
-      TftIlluminance(i);
-#endif // TFT3IN5       
+#if defined(TFT3IN5) 
+      if (!zcl_game){
+        TftIlluminance(i);
+      }
+#endif // TFT3IN5    
+#if defined(EPD3IN7)      
+//      EpdIlluminance(i);
+//      EpdIlluminance(i);
+#endif // EPD3IN7 
     }
     if (pInMsg->clusterId == POWER_CFG && pInAttrReport->attrList[n].attrID == ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING){
       temp_Battery_PercentageRemainig[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(0);
       old_bindClusterDev[i] |= BV(0); 
-#if defined(TFT3IN5)      
-      TftBattery(i);
+#if defined(TFT3IN5) 
+      if (!zcl_game){
+        TftBattery(i);
+      }
 #endif // TFT3IN5       
+#if defined(EPD3IN7)      
+//      EpdBattery(i);
+//      EpdBattery(i);
+#endif // EPD3IN7  
     }
     if (pInMsg->clusterId == OCCUPANCY && pInAttrReport->attrList[n].attrID == ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY){
       temp_Occupied[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= BV(5);
       old_bindClusterDev[i] |= BV(5);
-#if defined(TFT3IN5)      
-      TftOccupancy(i);
-#endif // TFT3IN5       
+#if defined(TFT3IN5)
+      if (!zcl_game){      
+        TftOccupancy(i);
+      }
+#endif // TFT3IN5 
+#if defined(EPD3IN7)      
+//      EpdOccupancy(i);
+//      EpdOccupancy(i);
+#endif // EPD3IN7        
     }
 #if defined(EPD3IN7) 
     EpdRefresh();
@@ -2710,6 +2835,33 @@ static void zclApp_DefaultRspCmd( zclIncomingMsg_t *pInMsg )
       LREP("commandID=0x%X\r\n", pInDefaultRspCmd->commandID);
       LREP("statusCode=0x%X\r\n", pInDefaultRspCmd->statusCode);
 }
+
+#ifdef HAL_LCD_PWM_PORT1
+static void InitLedPWM(uint8 level){
+    PERCFG &= ~0x20; //select of alternative 1 for timer 3
+    P2SEL |= 0x20; // Timer 3 priority over USART1
+    P2DIR |= 0xC0; // priority timer 1 channels 2-3
+    P1SEL |= BV(4); // p1.4 periferal
+    P1DIR |= BV(4); // p1.4 output
+  
+    T3CTL &= ~BV(4); // Stop timer 3 (if it was running)
+    T3CTL |= BV(2);  // Clear timer 3
+    T3CTL &= ~0x08;  // Disable Timer 3 overflow interrupts
+    T3CTL |= 0x03;   // Timer 3 mode = 3 - Up/Down
+
+    T3CCTL1 &= ~0x40; // Disable channel 0 interrupts
+    T3CCTL1 |= BV(2); // Ch0 mode = compare
+    T3CCTL1 |= BV(4); // Ch0 output compare mode = toggle on compare
+
+    T3CTL &= ~(BV(7) | BV(6) | BV(5)); // Clear Prescaler divider value
+//    T3CTL |= 0xA0; // Set prescaler divider value = tick frequency/32
+    T3CTL |= 0x20; // Set prescaler divider value = tick frequency/2
+    T3CC0 = 0xFF;  // Set ticks PWM signal period
+    T3CC1 = level;   // Set ticks PWM Duty Cycle
+    
+    T3CTL |= BV(4);  // Start timer 3
+}
+#endif
 
 /****************************************************************************
 ****************************************************************************/

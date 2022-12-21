@@ -1,6 +1,10 @@
 #ifndef EPD3IN7_H
 #define EPD3IN7_H
 
+void zclSpiBusy_Init(uint8 task_id);
+uint16 zclSpiBusy_loop(uint8 task_id, uint16 events);
+extern void zclSpiBusy_HandleKeys(uint8 portAndAction, uint8 keyCode);
+
 // Display resolution
 #define EPD_WIDTH       280
 #define EPD_HEIGHT      480

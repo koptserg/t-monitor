@@ -1,5 +1,6 @@
 #include "bme280spi.h"
 #include "Debug.h"
+//#include "ZDApp.h"
 #include "hal_key.h"
 
 #include <stdlib.h>
@@ -304,8 +305,12 @@ void bme_ConfigIO(void)
 #endif 
 #if defined(TFT3IN5)
   HAL_CONFIG_IO_OUTPUT(HAL_LCD_CS3_PORT,   HAL_LCD_CS3_PIN,   1);
-  HAL_CONFIG_IO_INPUT (HAL_LCD_TPIRQ_PORT,  HAL_LCD_TPIRQ_PIN,  0);  
+  HAL_CONFIG_IO_INPUT (HAL_LCD_TPIRQ_PORT,  HAL_LCD_TPIRQ_PIN,  0);
+#if defined(HAL_LCD_PWM_PORT1)  
+
+#else
   HAL_CONFIG_IO_OUTPUT (HAL_LCD_PWM_PORT,  HAL_LCD_PWM_PIN, 0);
+#endif  
 #endif  
 }
 
@@ -321,6 +326,21 @@ void bme_ConfigIOInput(void)
 
 void bme_ConfigSPI(void)
 {
+/*  
+    halUARTCfg_t halUARTConfig;
+    halUARTConfig.configured = TRUE;
+    halUARTConfig.baudRate = HAL_UART_BR_115200;
+    halUARTConfig.flowControl = FALSE;
+    halUARTConfig.flowControlThreshold = 48; // this parameter indicates number of bytes left before Rx Buffer
+                                             // reaches maxRxBufSize
+    halUARTConfig.idleTimeout = 10;          // this parameter indicates rx timeout period in millisecond
+    halUARTConfig.rx.maxBufSize = 0;
+    halUARTConfig.tx.maxBufSize = 128;
+    halUARTConfig.intEnable = TRUE;
+    halUARTConfig.callBackFunc = NULL;
+    HalUARTInit();
+    HalUARTOpen(HAL_UART_PORT_1, &halUARTConfig);
+*/  
   /* UART/SPI Peripheral configuration */
 
    uint8 baud_exponent;
@@ -703,10 +723,11 @@ void HalLcd_HW_Write_AllData(uint16 data, uint32 datalen)
   LCD_SPI_END2();
 }
 
+#ifdef TFT3IN5 
 uint16 HalLcd_HW_TP_Read(uint8 cmd)
 {
   uint16 data = 0;
-  
+ 
   LCD_SPI_BEGIN3();
   
   LCD_SPI_TX(cmd | 0x80);
@@ -726,3 +747,6 @@ uint16 HalLcd_HW_TP_Read(uint8 cmd)
 
   return data;
 }
+#endif
+
+

@@ -1,6 +1,7 @@
 
 #include <stdlib.h>
 
+#include "Debug.h"
 #include "xpt2046.h"
 #include "bme280spi.h" // HalLcd_HW_Control(), HalLcd_HW_Write()
 #include "utils.h"
@@ -8,9 +9,17 @@
 
 extern LCD_DIS sLCD_DIS;
 static TP_DEV sTP_DEV;
-static TP_DRAW sTP_Draw;
+TP_DRAW sTP_Draw;
+
+#ifndef HAL_LCD_TPIRQ_PORT
+#define HAL_LCD_TPIRQ_PORT 0
+#endif
+#ifndef HAL_LCD_TPIRQ_PIN
+#define HAL_LCD_TPIRQ_PIN  4  // TFT TP_IRQ
+#endif
 
 #define HAL_LCD_TPIRQ BNAME(HAL_LCD_TPIRQ_PORT, HAL_LCD_TPIRQ_PIN)
+
 /*******************************************************************************
   function:
         Read the ADC of the channel
@@ -137,7 +146,8 @@ static bool TP_Read_TwiceADC(unsigned int *pXCh_Adc, unsigned int  *pYCh_Adc )
                     1 : calibration
                     0 : relative position
 *******************************************************************************/
-static unsigned char TP_Scan(unsigned char chCoordType)
+//static unsigned char TP_Scan(unsigned char chCoordType)
+uint8 TP_Scan(uint8 chCoordType)
 {
   //In X, Y coordinate measurement, IRQ is disabled and output is low
   if (!HAL_LCD_TPIRQ) {//Press the button to press
@@ -173,6 +183,7 @@ static unsigned char TP_Scan(unsigned char chCoordType)
                           sTP_DEV.iYoff;
       }
       //          DEBUG("( x , y ) = %d,%d\r\n",sTP_Draw.Xpoint,sTP_Draw.Ypoint);
+//      LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
     }
     if (0 == (sTP_DEV.chStatus & TP_PRESS_DOWN)) {  //Not being pressed
       sTP_DEV.chStatus = TP_PRESS_DOWN | TP_PRESSED;

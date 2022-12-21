@@ -7,6 +7,11 @@
 #include "bme280spi.h" // HalLcd_HW_Control(), HalLcd_HW_Write()
 #include "imagedata.h"
 #include "epdpaint.h"
+
+#include "Debug.h"
+#include "ZDApp.h"
+#include "hal_key.h"
+
 #include "utils.h"
 
 #define HAL_LCD_BUSY BNAME(HAL_LCD_BUSY_PORT, HAL_LCD_BUSY_PIN)
@@ -18,16 +23,16 @@ unsigned long epd_height = EPD_HEIGHT;
 
 void EpdInit(void) {  
   EpdReset();
-  WaitUntilIdle();
+//  WaitUntilIdle();
   EpdSendCommand(SW_RESET);  //SWRESET
   WaitUntilIdle();
   
-  EpdSendCommand(0x46); 
-  EpdSendData(0xF7);
-  WaitUntilIdle();
-  EpdSendCommand(0x47);
-  EpdSendData(0xF7);
-  WaitUntilIdle(); 
+//  EpdSendCommand(0x46); 
+//  EpdSendData(0xF7);
+//  WaitUntilIdle();
+//  EpdSendCommand(0x47);
+//  EpdSendData(0xF7);
+//  WaitUntilIdle(); 
   
   EpdSendCommand(DRIVER_OUTPUT_CONTROL);
   EpdSendData(0xDF);
@@ -163,7 +168,7 @@ void EpdSetLut(const unsigned char *lut) {
   EpdSendCommand(WRITE_LUT_REGISTER);
   for(count=0; count<105; count++) 
     EpdSendData(lut[count]); 
-  WaitUntilIdle();
+//  WaitUntilIdle();
 }
 
 void EpdSetFrameMemoryImageXY(const unsigned char* image_buffer, int x, int y, int image_width, int image_height, uint8 invert) {
@@ -193,8 +198,8 @@ void EpdSetFrameMemoryImageXY(const unsigned char* image_buffer, int x, int y, i
   
     EpdSetMemoryArea(x, y, x_end, y_end);
     EpdSetMemoryPointer(x, y);
+    
     EpdSendCommand(WRITE_RAM);
- 
     // send the image data
     for (int j = 0; j < y_end - y + 1; j++) {
         for (int i = 0; i < (x_end - x + 1) / 8; i++) {
@@ -206,7 +211,8 @@ void EpdSetFrameMemoryImageXY(const unsigned char* image_buffer, int x, int y, i
           }
           EpdSendData((uint8)( inv_image ));
         }
-    }  
+    }
+    
 }
 
 void EpdSetFrameMemoryXY(const unsigned char* image_buffer, int x, int y, int image_width, int image_height) {
@@ -237,7 +243,7 @@ void EpdSetFrameMemoryXY(const unsigned char* image_buffer, int x, int y, int im
     
     EpdSetMemoryArea(x, y, x_end, y_end);
     EpdSetMemoryPointer(x, y);
-   
+    
     EpdSendCommand(WRITE_RAM);
     // send the image data     
     for (int j = 0; j < y_end - y + 1; j++) {
@@ -276,14 +282,23 @@ void EpdSetFrameMemoryBase(const unsigned char* image_buffer, uint8 invert) {
 
 
 void EpdClearFrameMemory(unsigned char color) {
+/*  
     EpdSetMemoryArea(0, 0, epd_width - 1, epd_height - 1);
     EpdSetMemoryPointer(0, 0);  
     
     EpdSendCommand(WRITE_RAM);
-    /* send the color data */
+    // send the color data 
     for (int i = 0; i < epd_width / 8 * epd_height; i++) {
         EpdSendData(color);
     }
+*/ 
+  EpdSendCommand(0x46); 
+  EpdSendData(0xE6);
+  WaitUntilIdle();
+  EpdSendCommand(0x47);
+  EpdSendData(0xE6);// 512 x 512
+  WaitUntilIdle(); 
+  
 }
 
 void EpdSetMemoryArea(int x_start, int y_start, int x_end, int y_end) {
@@ -309,11 +324,11 @@ void EpdSetMemoryPointer(int x, int y) {
     EpdSendCommand(SET_RAM_Y_ADDRESS_COUNTER);
     EpdSendData(y & 0xFF);
     EpdSendData((y >> 8) & 0xFF);
-    WaitUntilIdle();
+//    WaitUntilIdle();
 }
 
 
-void EpdDisplayFramePartial(void) {
+void EpdDisplayFramePartial(void) { 
   EpdSendCommand(DISPLAY_UPDATE_CONTROL_2);
   EpdSendData(0xCF);
   EpdSendCommand(MASTER_ACTIVATION);

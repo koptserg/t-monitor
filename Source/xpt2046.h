@@ -33,11 +33,13 @@ typedef struct{
 	DOT_PIXEL DotPixel; 
 }TP_DRAW;
 
-void TP_GetAdFac(void);
-void TP_Adjust(void);
-void TP_Dialog(void);
-void TP_DrawBoard(void);
-void TP_Init( LCD_SCAN_DIR Lcd_ScanDir );
+extern uint8 TP_Scan(uint8 chCoordType);
+
+extern void TP_GetAdFac(void);
+extern void TP_Adjust(void);
+extern void TP_Dialog(void);
+extern void TP_DrawBoard(void);
+extern void TP_Init( LCD_SCAN_DIR Lcd_ScanDir );
 
 void DelayUs(uint16 microSecs);
 
