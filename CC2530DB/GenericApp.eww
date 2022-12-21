@@ -8,19 +8,11 @@
             <name>ALL</name>
             <member>
                 <project>GenericApp</project>
-                <configuration>DIYRuZ_E-monitor_epd154</configuration>
+                <configuration>DIYRuZ_T-monitor_epd37</configuration>
             </member>
             <member>
                 <project>GenericApp</project>
-                <configuration>DIYRuZ_E-monitor_epd213</configuration>
-            </member>
-            <member>
-                <project>GenericApp</project>
-                <configuration>DIYRuZ_E-monitor_epd29</configuration>
-            </member>
-            <member>
-                <project>GenericApp</project>
-                <configuration>DIYRuZ_E-monitor_epd37</configuration>
+                <configuration>DIYRuZ_T-monitor_tft35</configuration>
             </member>
         </batchDefinition>
     </batchBuild>
