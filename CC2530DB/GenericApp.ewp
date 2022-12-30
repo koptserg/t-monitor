@@ -2286,6 +2286,12 @@
     <group>
         <name>App</name>
         <file>
+            <name>$PROJ_DIR$\..\Source\beeping.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\beeping.h</name>
+        </file>
+        <file>
             <name>$PROJ_DIR$\..\Source\bh1750.c</name>
         </file>
         <file>
@@ -2386,6 +2392,12 @@
         </file>
         <file>
             <name>$PROJ_DIR$\..\Source\preinclude.h</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\songdata.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\songdata.h</name>
         </file>
         <file>
             <name>$PROJ_DIR$\..\Source\stdint.h</name>
