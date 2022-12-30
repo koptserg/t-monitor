@@ -56,5 +56,5 @@
 extern uint16 breakout_event_loop(uint8 task_id, uint16 events);
 extern void breakout_Init(uint8 task_id);
 extern void breakout_start(void);
-extern void keyprocessing(void);
+extern void breakout_keyprocessing(void);
 #endif

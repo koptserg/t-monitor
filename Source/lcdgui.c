@@ -363,7 +363,40 @@ void GUI_DisNum(POINT Xpoint, POINT Ypoint, int32_t Nummber,
   GUI_DisString_EN(Xpoint, Ypoint, (const char*)pStr, Font, Color_Background, Color_Foreground );
 }
 
+void GUI_DisNumDP(POINT Xpoint, POINT Ypoint, uint16 Nummber, uint8 dec_places,
+                sFONT* Font, COLOR Color_Background, COLOR Color_Foreground )
+{
 
+  int16_t Num_Bit = 0, Str_Bit = 0;
+  uint8_t Str_Array[ARRAY_LEN] = {0}, Num_Array[ARRAY_LEN] = {0};
+  uint8_t *pStr = Str_Array;
+
+  if (Xpoint > sLCD_DIS.LCD_Dis_Column || Ypoint > sLCD_DIS.LCD_Dis_Page) {
+//    DEBUG("GUI_DisNum Input exceeds the normal display range\r\n");
+    return;
+  }
+
+  //Converts a number to a string
+  while (Nummber) {
+    Num_Array[Num_Bit] = Nummber % 10 + '0';
+    Num_Bit++;
+    Nummber /= 10;
+  }
+
+  //The string is inverted
+  while (Num_Bit > 0) {
+    if (Num_Bit == dec_places ) {
+      Str_Array[Str_Bit] = '.';
+      Str_Bit ++;
+    }
+    Str_Array[Str_Bit] = Num_Array[Num_Bit - 1];
+    Num_Bit --;
+    Str_Bit ++;
+  }
+
+  //show
+  GUI_DisString_EN(Xpoint, Ypoint, (const char*)pStr, Font, Color_Background, Color_Foreground );
+}
 
 /******************************************************************************
   function:	Display the bit map,1 byte = 8bit = 8 points

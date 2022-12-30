@@ -137,6 +137,7 @@ void GUI_DisGrayMap(POINT Xpoint, POINT Ypoint, const unsigned char *pBmp);
 //Display string
 void GUI_DisChar(POINT Xstart, POINT Ystart, const char Acsii_Char, sFONT* Font, COLOR Color_Background, COLOR Color_Foreground);
 void GUI_DisString_EN(POINT Xstart, POINT Ystart, const char * pString, sFONT* Font, COLOR Color_Background, COLOR Color_Foreground );
+void GUI_DisNumDP(POINT Xpoint, POINT Ypoint, uint16 Nummber, uint8 dec_places, sFONT* Font, COLOR Color_Background, COLOR Color_Foreground );
 void GUI_DisNum(POINT Xpoint, POINT Ypoint, int32_t Nummber, sFONT* Font, COLOR Color_Background, COLOR Color_Foreground );
 void GUI_Showtime(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend, DEV_TIME *pTime, COLOR Color);
 //show

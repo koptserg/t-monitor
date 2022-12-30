@@ -15,6 +15,7 @@
 #include "epd3in7.h"
 
 #include "breakout.h"
+#include "beeping.h"
 
 #include "Debug.h"
 
@@ -36,7 +37,10 @@ const pTaskEventHandlerFn tasksArr[] = {macEventLoop,
                                         zclApp_event_loop,
 #if defined( TFT3IN5 )                                       
                                         breakout_event_loop,
-#endif                                        
+#endif
+#if defined( HAL_LCD_PWM_PORT0 ) 
+                                        beeping_event_loop,
+#endif 
                                         zclFactoryResetter_loop,
                                         zclCommissioning_event_loop
                                         };
@@ -63,6 +67,9 @@ void osalInitTasks(void) {
     zclApp_Init(taskID++);
 #if defined( TFT3IN5 )     
     breakout_Init(taskID++);
+#endif
+#if defined( HAL_LCD_PWM_PORT0 )
+    beeping_Init(taskID++);
 #endif
     zclFactoryResetter_Init(taskID++);
     zclCommissioning_Init(taskID++);

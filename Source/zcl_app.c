@@ -40,6 +40,7 @@
 #include "factory_reset.h"
 #include "utils.h"
 #include "version.h"
+#include "beeping.h"
 
 #ifdef EPD3IN7
 #include "epd3in7.h"
@@ -217,6 +218,7 @@ static void TftBindStatus(uint8 temp_s);
 static void TftLqi(uint8 temp_l);
 static void TftNwk(uint8 temp_n);
 static void TftBattery(uint8 temp_b);
+static void TftWidgetMeasuredValue(uint8 dev_num, uint8 cluster_bit);
 #if defined(HAL_LCD_PWM_PORT1)
 static void InitLedPWM(uint8 level);
 #endif
@@ -293,7 +295,10 @@ void zclApp_Init(byte task_id) {
     zclApp_RestoreAttributesFromNV();
 #ifdef HAL_LCD_PWM_PORT1    
     InitLedPWM(10);
-#endif    
+#endif
+#ifdef HAL_LCD_PWM_PORT0    
+//    InitBuzzer(100, 3000);
+#endif
     P1SEL &= ~BV(0); // Set P1_0 to GPIO
 //    IO_FUNC_PORT_PIN(MOTION_POWER_PORT, MOTION_POWER_PIN, IO_GIO); // Set P1_0 to GPIO
     P1DIR |= BV(0); // P1_0 output
@@ -943,18 +948,24 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
     if (events & APP_TFT_TP_EVT) {
 //        LREPMaster("APP_TFT_TP_EVT\r\n");
           uint8 press_down = TP_Scan(0);
-          LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
+          LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);          
           if (!zcl_game){
             zcl_game = 1;
             breakout_start();
           } else {
-            keyprocessing();
+            breakout_keyprocessing();
             if (!zcl_game) {
               GUI_Clear(WHITE);
               TftStatus(0);
               TftTimeDateWeek();
+              for (uint8 i = 0; i <= 2; i++) {
+                if (temp_Sender_shortAddr[i] != 0xFFFE){
+                  TfttestRefresh(i);
+                }
+              }
             }           
           }
+          
         return (events ^ APP_TFT_TP_EVT);
     }
 #endif // TFT3IN5     
@@ -2064,41 +2075,11 @@ static void EpdOccupancy(uint8 temp_oc){
 #if defined(TFT3IN5)
 static void TftIlluminance(uint8 temp_i){
   //Illuminance
-  uint8 row = temp_i *120;
-  char illum_string[] = {' ',' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_i] & 0x02){
-    illum_string[0] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] / 10000 % 10 + '0';
-    illum_string[1] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] / 1000 % 10 + '0';
-    illum_string[2] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] / 100 % 10 + '0';
-    illum_string[3] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] / 10 % 10 + '0';
-    illum_string[4] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] % 10 + '0';
-  }
-
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait      
-    if (old_bindClusterDev[temp_i] & 0x02){
-      GUI_DrawRectangle(184, 144 + row, 184+80, 144 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(184, 144 + row, illum_string, &Font32, LCD_BACKGROUND, BLUE);
-
-      GUI_DrawRectangle(184, 176 + row, 184+36, 176 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(184, 176 + row, "Lux", &Font16, LCD_BACKGROUND, BLUE);
-      
-      if (zclApp_EpdUpDown[temp_i] & 0x02){
-        GUI_Disbitmap(168, 144 + row , IMAGE_LEFT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(168-1, 160 + row, 168+16, 160 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      } else {
-        GUI_Disbitmap(168, 160 + row , IMAGE_RIGHT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(168-1, 144 + row, 168+16, 144 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      }
-    } else {
-      GUI_DrawRectangle(168-1, 160 + row, 168+16, 160 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(168-1, 144 + row, 168+16, 144 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(184, 144 + row, 184+80, 144 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(184, 176 + row, 184+36, 176 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    }   
+  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+    TftWidgetMeasuredValue(temp_i, 0x02); //0x02 temperature   
   } else { //landscape
 
   }
-
 }
 #endif
 
@@ -2176,43 +2157,64 @@ static void EpdIlluminance(uint8 temp_i){
 #endif
 
 #if defined(TFT3IN5)
+// enable/disable display of values
+// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
+//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
+static void TftWidgetMeasuredValue(uint8 dev_num, uint8 cluster_bit){
+  uint16 row = dev_num *120;
+  uint16 x;
+  uint16 y;
+  char* string_uint = "";
+  uint16 value;
+  uint8 scale;
+  if (cluster_bit & 0x02){ // 0x02 illuminance
+    x = 168;
+    y = 144 + row;
+    string_uint = "Lux";
+    value = temp_bh1750IlluminanceSensor_MeasuredValue[dev_num];
+    scale = 0;
+  }
+  if (cluster_bit & 0x04) { // 0x04 temperature
+    x = 64;
+    y = 144 + row;
+    string_uint = "^C";
+    value = temp_Temperature_Sensor_MeasuredValue[dev_num];
+    scale = 2;
+  }
+  if (cluster_bit & 0x08){ // 0x08 pressure
+    x = 168;
+    y = 192 + row;
+    string_uint = "hPa";
+    value = temp_PressureSensor_MeasuredValue[dev_num];
+    scale = 0;
+  }
+  if (cluster_bit & 0x10){ // 0x10 humidity
+    x = 64;
+    y = 192 + row;
+    string_uint = "%Ha";
+    value = temp_HumiditySensor_MeasuredValue[dev_num];
+    scale = 2;    
+  }
+  LCD_SetArealColorWH(x, y, 96, 48, LCD_BACKGROUND);
+  if (old_bindClusterDev[dev_num] & cluster_bit){            
+      GUI_DisNumDP(x+16, y, value, scale, &Font32, LCD_BACKGROUND, BLUE );
+      GUI_DisString_EN(x+16, y+32, string_uint, &Font16, LCD_BACKGROUND, BLUE);      
+      if (zclApp_EpdUpDown[dev_num] & cluster_bit){
+        GUI_Disbitmap(x, y, IMAGE_LEFT, 16, 16, BLUE, 1);
+      } else {
+        GUI_Disbitmap(x, y+16 , IMAGE_RIGHT, 16, 16, BLUE, 1);
+      }
+  }
+  
+}
+
 static void TftTemperature(uint8 temp_t){
   //temperature
-  uint8 row = temp_t *120;
-  char temp_string[] = {' ', ' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_t] & 0x04){
-    temp_string[0] = temp_Temperature_Sensor_MeasuredValue[temp_t] / 1000 % 10 + '0';
-    temp_string[1] = temp_Temperature_Sensor_MeasuredValue[temp_t] / 100 % 10 + '0';
-    temp_string[2] = '.';
-    temp_string[3] = temp_Temperature_Sensor_MeasuredValue[temp_t] / 10 % 10 + '0';
-    temp_string[4] = temp_Temperature_Sensor_MeasuredValue[temp_t] % 10 + '0';
-  }
-
   if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-      if (old_bindClusterDev[temp_t] & 0x04){
-      GUI_DrawRectangle(80, 144 + row, 80+80, 144 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(80, 144 + row, temp_string, &Font32, LCD_BACKGROUND, BLUE);
-
-      GUI_DrawRectangle(80, 176 + row, 80+24, 176 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(80, 176 + row, "^C", &Font16, LCD_BACKGROUND, BLUE);
-      
-      if (zclApp_EpdUpDown[temp_t] & 0x04){
-        GUI_Disbitmap(64, 144 + row , IMAGE_LEFT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(64-1, 160 + row, 64+16, 160 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      } else {
-        GUI_Disbitmap(64, 160 + row , IMAGE_RIGHT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(64-1, 144 + row, 64+16, 144 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      }
-    } else {
-      GUI_DrawRectangle(64-1, 160 + row, 64+16, 160 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(64-1, 144 + row, 64+16, 144 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(80, 144 + row, 80+80, 144 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(80, 176 + row, 80+24, 176 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    }
+    TftWidgetMeasuredValue(temp_t, 0x04); //0x04 temperature
   } else { //landscape
 
   }
-
 }
 #endif
 
@@ -2291,41 +2293,11 @@ static void EpdTemperature(uint8 temp_t){
 #if defined(TFT3IN5)
 static void TftHumidity(uint8 temp_h){
   //humidity
-  uint8 row = temp_h * 120;
-  char hum_string[] = {' ', ' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_h] & 0x10){
-    hum_string[0] = temp_HumiditySensor_MeasuredValue[temp_h] / 1000 % 10 + '0';
-    hum_string[1] = temp_HumiditySensor_MeasuredValue[temp_h] / 100 % 10 + '0';
-    hum_string[2] = '.';
-    hum_string[3] = temp_HumiditySensor_MeasuredValue[temp_h] / 10 % 10 + '0';
-    hum_string[4] = temp_HumiditySensor_MeasuredValue[temp_h] % 10 + '0';
-  }
-
   if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    if (old_bindClusterDev[temp_h] & 0x10){
-      GUI_DrawRectangle(80, 192 + row, 80+80, 192 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(80, 192 + row, hum_string, &Font32, LCD_BACKGROUND, BLUE);
-
-      GUI_DrawRectangle(80, 224 + row, 80+36, 224 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(80, 224 + row, "%Ha", &Font16, LCD_BACKGROUND, BLUE);
-      
-      if (zclApp_EpdUpDown[temp_h] & 0x10){
-        GUI_Disbitmap(64, 192 + row , IMAGE_LEFT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(64-1, 208 + row, 64+16, 208 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      } else {
-        GUI_Disbitmap(64, 208 + row , IMAGE_RIGHT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(64-1, 192 + row, 64+16, 192 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      }
-    } else {
-      GUI_DrawRectangle(64-1, 208 + row, 64+16, 208 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(64-1, 192 + row, 64+16, 192 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(80, 192 + row, 80+80, 192 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(80, 224 + row, 80+36, 224 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    }
+    TftWidgetMeasuredValue(temp_h, 0x10); //0x10 humidity
   } else { // landscape
 
   }
-
 }
 #endif
 
@@ -2404,38 +2376,8 @@ static void EpdHumidity(uint8 temp_h){
 #if defined(TFT3IN5)
 static void TftPressure(uint8 temp_p){
   //pressure
-  uint8 row = temp_p*120;
-  char pres_string[] = {' ', ' ', ' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_p] & 0x08){
-    pres_string[0] = temp_PressureSensor_MeasuredValue[temp_p] / 1000 % 10 + '0';
-    pres_string[1] = temp_PressureSensor_MeasuredValue[temp_p] / 100 % 10 + '0';
-    pres_string[2] = temp_PressureSensor_MeasuredValue[temp_p] / 10 % 10 + '0';
-    pres_string[3] = temp_PressureSensor_MeasuredValue[temp_p] % 10 + '0';
-    pres_string[4] = '.';
-    pres_string[5] = temp_PressureSensor_ScaledValue[temp_p] % 10 + '0';
-  }
-
   if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-   if (old_bindClusterDev[temp_p] & 0x08){
-      GUI_DrawRectangle(184, 192 + row, 184+96, 192 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(184, 192 + row, pres_string, &Font32, LCD_BACKGROUND, BLUE);
-
-      GUI_DrawRectangle(184, 224 + row, 184+36, 224 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DisString_EN(184, 224 + row, "hPa", &Font16, LCD_BACKGROUND, BLUE);
-      
-      if (zclApp_EpdUpDown[temp_p] & 0x08){
-        GUI_Disbitmap(168, 192 + row , IMAGE_LEFT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(168-1, 208 + row, 168+16, 208 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      } else {
-        GUI_Disbitmap(168, 208 + row , IMAGE_RIGHT, 16, 16, BLUE, 1);
-        GUI_DrawRectangle(168-1, 192 + row, 168+16, 192 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      }
-    } else {
-      GUI_DrawRectangle(168-1, 208 + row, 168+16, 208 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(168-1, 192 + row, 168+16, 192 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(184, 192 + row, 184+96, 192 + row + 32, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      GUI_DrawRectangle(184, 224 + row, 184+36, 224 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    }    
+   TftWidgetMeasuredValue(temp_p, 0x08); //0x08 pressure  
   } else { //landscape
 
   }
@@ -2840,7 +2782,7 @@ static void zclApp_DefaultRspCmd( zclIncomingMsg_t *pInMsg )
 static void InitLedPWM(uint8 level){
     PERCFG &= ~0x20; //select of alternative 1 for timer 3
     P2SEL |= 0x20; // Timer 3 priority over USART1
-    P2DIR |= 0xC0; // priority timer 1 channels 2-3
+//    P2DIR |= 0xC0; // priority timer 1 channels 2-3
     P1SEL |= BV(4); // p1.4 periferal
     P1DIR |= BV(4); // p1.4 output
   
@@ -2862,6 +2804,7 @@ static void InitLedPWM(uint8 level){
     T3CTL |= BV(4);  // Start timer 3
 }
 #endif
+
 
 /****************************************************************************
 ****************************************************************************/

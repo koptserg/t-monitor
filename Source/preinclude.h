@@ -50,7 +50,7 @@
 #define MT_SYS_FUNC
 #define MT_ZDO_FUNC
 #define MT_ZDO_MGMT
-#define INT_HEAP_LEN (2688 - 0x100 - 0x3 - 0x1F)
+#define INT_HEAP_LEN (2688 - 0x100 - 0x3 - 0x1F - 0x3)
 #endif
 
 
@@ -132,6 +132,7 @@
 #ifndef DO_DEBUG_UART
 #define HAL_UART TRUE
 #define HAL_UART_DMA 2
+#define HAL_LCD_PWM_PORT0
 #endif
 
 #ifdef DO_DEBUG_MT
