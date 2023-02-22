@@ -9,6 +9,7 @@
 extern LCD_DIS sLCD_DIS;
 extern BUTTON sButton[];
 
+
 /******************************************************************************
   function:	Coordinate conversion
 ******************************************************************************/
@@ -161,6 +162,42 @@ void GUI_DrawRectangle(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend,
   }
 }
 
+void GUI_DrawRoundRectangle(POINT r, POINT Xstart, POINT Ystart, POINT Xend, POINT Yend,
+                       COLOR Color, DRAW_FILL Filled, DOT_PIXEL Dot_Pixel)
+{
+  if (Xstart > sLCD_DIS.LCD_Dis_Column || Ystart > sLCD_DIS.LCD_Dis_Page ||
+      Xend > sLCD_DIS.LCD_Dis_Column || Yend > sLCD_DIS.LCD_Dis_Page) {
+//    DEBUG("Input exceeds the normal display range\r\n");
+    return;
+  }
+
+  if (Xstart > Xend)
+    GUI_Swop(Xstart, Xend);
+  if (Ystart > Yend)
+    GUI_Swop(Ystart, Yend);
+
+  if (Filled ) {
+    LCD_SetArealColor( Xstart+r, Ystart, Xend-r, Ystart+r, Color);
+    LCD_SetArealColor( Xstart, Ystart+r, Xend, Yend-r, Color);
+    LCD_SetArealColor( Xstart+r, Yend-r, Xend-r, Yend, Color);
+    GUI_DrawCircleHelper(1, Xstart+r+1, Ystart+r+1, r, Color, DRAW_FULL, Dot_Pixel );
+    GUI_DrawCircleHelper(2, Xend-r, Ystart+r+1, r, Color, DRAW_FULL, Dot_Pixel );
+    GUI_DrawCircleHelper(4, Xend-r, Yend-r, r, Color, DRAW_FULL, Dot_Pixel );
+    GUI_DrawCircleHelper(8, Xstart+r+1, Yend-r, r, Color, DRAW_FULL, Dot_Pixel );
+  } else {
+        // smarter version
+    GUI_DrawLine(Xstart+r, Ystart+1, Xend-r, Ystart+1, Color , LINE_SOLID, Dot_Pixel); // Top
+    GUI_DrawLine(Xend-r, Yend, Xstart+r, Yend, Color , LINE_SOLID, Dot_Pixel); // Bottom
+    GUI_DrawLine(Xend, Yend-r, Xend, Ystart+r, Color , LINE_SOLID, Dot_Pixel); // Right
+    GUI_DrawLine(Xstart+1, Ystart+r, Xstart+1, Yend-r, Color , LINE_SOLID, Dot_Pixel); // Left
+    // draw four corners
+    GUI_DrawCircleHelper(1, Xstart+r+1, Ystart+r+1, r, Color, DRAW_EMPTY, Dot_Pixel );
+    GUI_DrawCircleHelper(2, Xend-r, Ystart+r+1, r, Color, DRAW_EMPTY, Dot_Pixel );
+    GUI_DrawCircleHelper(4, Xend-r, Yend-r, r, Color, DRAW_EMPTY, Dot_Pixel );
+    GUI_DrawCircleHelper(8, Xstart+r+1, Yend-r, r, Color, DRAW_EMPTY, Dot_Pixel );
+    
+  }
+}
 /******************************************************************************
   function:	Use the 8-point method to draw a circle of the
 				specified size at the specified position.
@@ -230,6 +267,80 @@ void GUI_DrawCircle(POINT X_Center, POINT Y_Center, LENGTH Radius,
   }
 }
 
+void GUI_DrawCircleHelper(uint8 cornername, POINT X_Center, POINT Y_Center, LENGTH Radius,
+                    COLOR Color, DRAW_FILL  Draw_Fill , DOT_PIXEL Dot_Pixel)
+{
+  if (X_Center > sLCD_DIS.LCD_Dis_Column || Y_Center >= sLCD_DIS.LCD_Dis_Page) {
+//    DEBUG("GUI_DrawCircle Input exceeds the normal display range\r\n");
+    return;
+  }
+
+  //Draw a circle from(0, R) as a starting point
+  int16_t XCurrent, YCurrent;
+  XCurrent = 0;
+  YCurrent = Radius;
+
+  //Cumulative error,judge the next point of the logo
+  int16_t Esp = 3 - (Radius << 1 );
+
+  int16_t sCountY;
+  if (Draw_Fill == DRAW_FULL) {
+    while (XCurrent <= YCurrent ) { //Realistic circles
+      for (sCountY = XCurrent; sCountY <= YCurrent; sCountY ++ ) {
+        if (cornername & 0x8) {
+          GUI_DrawPoint(X_Center - XCurrent, Y_Center + sCountY, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//2
+          GUI_DrawPoint(X_Center - sCountY, Y_Center + XCurrent, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//3
+        }
+        if (cornername & 0x1) {
+          GUI_DrawPoint(X_Center - sCountY, Y_Center - XCurrent, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//4
+          GUI_DrawPoint(X_Center - XCurrent, Y_Center - sCountY, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//5
+        }
+        if (cornername & 0x2) {
+          GUI_DrawPoint(X_Center + XCurrent, Y_Center - sCountY, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//6
+          GUI_DrawPoint(X_Center + sCountY, Y_Center - XCurrent, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//7
+        }
+        if (cornername & 0x4) {
+          GUI_DrawPoint(X_Center + sCountY, Y_Center + XCurrent, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//0
+          GUI_DrawPoint(X_Center + XCurrent, Y_Center + sCountY, Color, DOT_PIXEL_DFT, DOT_STYLE_DFT );//1
+        }
+      }
+      if (Esp < 0 )
+        Esp += 4 * XCurrent + 6;
+      else {
+        Esp += 10 + 4 * (XCurrent - YCurrent );
+        YCurrent --;
+      }
+      XCurrent ++;
+    }
+  } else { //Draw a hollow circle
+    while (XCurrent <= YCurrent ) {
+      if (cornername & 0x8) { 
+        GUI_DrawPoint(X_Center - XCurrent, Y_Center + YCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//2
+        GUI_DrawPoint(X_Center - YCurrent, Y_Center + XCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//3
+      }
+      if (cornername & 0x1) {
+        GUI_DrawPoint(X_Center - YCurrent, Y_Center - XCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//4
+        GUI_DrawPoint(X_Center - XCurrent, Y_Center - YCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//5
+      }
+      if (cornername & 0x2) {
+        GUI_DrawPoint(X_Center + XCurrent, Y_Center - YCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//6
+        GUI_DrawPoint(X_Center + YCurrent, Y_Center - XCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//7
+      }
+      if (cornername & 0x4) {
+        GUI_DrawPoint(X_Center + YCurrent, Y_Center + XCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//0
+        GUI_DrawPoint(X_Center + XCurrent, Y_Center + YCurrent, Color, Dot_Pixel, DOT_STYLE_DFT );//1
+      }
+      if (Esp < 0 )
+        Esp += 4 * XCurrent + 6;
+      else {
+        Esp += 10 + 4 * (XCurrent - YCurrent );
+        YCurrent --;
+      }
+      XCurrent ++;
+    }
+  }
+}
+
 /******************************************************************************
   function:	Show English characters
   parameter:
@@ -257,12 +368,13 @@ void GUI_DisChar(POINT Xpoint, POINT Ypoint, const char Acsii_Char,
     for (Column = 0; Column < Font->Width; Column ++ ) {
 
       //To determine whether the font background color and screen background color is consistent
-      if (FONT_BACKGROUND == Color_Background) { //this process is to speed up the scan
-//        if (pgm_read_byte(ptr) & (0x80 >> (Column % 8)))
-        if (*ptr & (0x80 >> (Column % 8)))
-          GUI_DrawPoint(Xpoint + Column, Ypoint + Page, Color_Foreground, DOT_PIXEL_DFT, DOT_STYLE_DFT);
+//      if (FONT_BACKGROUND == Color_Background) { //this process is to speed up the scan
+      if (FONT_BACKGROUND == LCD_BACKGROUND) {
+        if (*ptr & (0x80 >> (Column % 8))) {
+//          GUI_DrawPoint(Xpoint + Column, Ypoint + Page, Color_Foreground, DOT_PIXEL_DFT, DOT_STYLE_DFT);
+          LCD_SetPointlColor(Xpoint + Column, Ypoint + Page, Color_Foreground);
+        }
       } else {
-//        if (pgm_read_byte(ptr) & (0x80 >> (Column % 8))) {
         if (*ptr & (0x80 >> (Column % 8))) {
           GUI_DrawPoint(Xpoint + Column, Ypoint + Page, Color_Foreground, DOT_PIXEL_DFT, DOT_STYLE_DFT);
         } else {
@@ -671,7 +783,9 @@ void initButtonUL(uint8 i,
 }
 
 void drawButton(uint8 i, bool inverted) {
-  uint16 fill, outline, text;
+  uint16 fill;
+  uint16 outline;
+  uint16 text;
 
   if(!inverted) {
     fill    = sButton[i].fillcolor;
@@ -683,14 +797,23 @@ void drawButton(uint8 i, bool inverted) {
     text    = sButton[i].fillcolor;
   }
 
-  GUI_DrawRectangle(sButton[i].x1, sButton[i].y1, sButton[i].x1+sButton[i].w, sButton[i].y1+sButton[i].h, 
+  uint8 r ; // Corner radius
+  if (sButton[i].w > sButton[i].h) {
+    r = sButton[i].h / 4;
+  } else {
+    r = sButton[i].w / 4;
+  }  
+  
+  GUI_DrawRoundRectangle(r, sButton[i].x1, sButton[i].y1, sButton[i].x1+sButton[i].w, sButton[i].y1+sButton[i].h, 
                     fill, DRAW_FULL , DOT_PIXEL_DFT );
-  GUI_DrawRectangle(sButton[i].x1, sButton[i].y1, sButton[i].x1+sButton[i].w, sButton[i].y1+sButton[i].h, 
-                    outline, DRAW_EMPTY , DOT_PIXEL_DFT );
 
+  GUI_DrawRoundRectangle(r, sButton[i].x1, sButton[i].y1, sButton[i].x1+sButton[i].w, sButton[i].y1+sButton[i].h, 
+                    outline, DRAW_EMPTY , DOT_PIXEL_DFT );
+//  text = WHITE;  
   GUI_DisString_EN(sButton[i].x1 + (sButton[i].w/2) - (strlen(sButton[i].label) * 3 * sButton[i].textsize),
                    sButton[i].y1 + (sButton[i].h/2) - (4 * sButton[i].textsize),
                    sButton[i].label, &Font20, LCD_BACKGROUND, text);
+
 }
 
 extern TP_DRAW sTP_Draw;

@@ -4,21 +4,78 @@
 #include "Debug.h"
 #include "xpt2046.h"
 #include "bme280spi.h" // HalLcd_HW_Control(), HalLcd_HW_Write()
-#include "utils.h"
+//#include "utils.h"
 #include "math.h"
+
+//#include "tft3in5.h"
+//#include "lcdgui.h"
+#include "zcl_app.h"
+//#include "breakout.h"
+#include "hal_key.h"
 
 extern LCD_DIS sLCD_DIS;
 static TP_DEV sTP_DEV;
 TP_DRAW sTP_Draw;
+static bool tp_pres = 1;
+bool xpt2046_mode = 1;
 
-#ifndef HAL_LCD_TPIRQ_PORT
-#define HAL_LCD_TPIRQ_PORT 0
-#endif
-#ifndef HAL_LCD_TPIRQ_PIN
-#define HAL_LCD_TPIRQ_PIN  4  // TFT TP_IRQ
-#endif
+static void DelayMs(unsigned int delaytime);
+static void DelayUs(uint16 microSecs);
+static void TP_Adjust(void);
+static void TP_Dialog(void);
+static unsigned int TP_Read_ADC(unsigned char CMD);
+static unsigned int TP_Read_ADC_Average(unsigned char Channel_Cmd);
+static void TP_Read_ADC_XY(unsigned int *pXCh_Adc, unsigned int  *pYCh_Adc );
+static bool TP_Read_TwiceADC(unsigned int *pXCh_Adc, unsigned int  *pYCh_Adc );
+static void TP_DrawCross(POINT Xpoint, POINT Ypoint, COLOR Color);
+static void TP_ShowInfo(POINT Xpoint0, POINT Ypoint0,
+                        POINT Xpoint1, POINT Ypoint1,
+                        POINT Xpoint2, POINT Ypoint2,
+                        POINT Xpoint3, POINT Ypoint3,
+                        POINT hwFac);
+static void TP_Adjust(void);
+static uint8 TP_Scan(uint8 chCoordType);
+static void TP_Init( LCD_SCAN_DIR Lcd_ScanDir );
 
-#define HAL_LCD_TPIRQ BNAME(HAL_LCD_TPIRQ_PORT, HAL_LCD_TPIRQ_PIN)
+uint8 xpt2046_TaskId = 0;
+
+void xpt2046_Init(uint8 task_id) {
+    xpt2046_TaskId = task_id;
+    
+    LCD_SCAN_DIR Lcd_ScanDir = SCAN_DIR_DFT;    //SCAN_DIR_DFT = D2U_L2R
+    TP_Init( Lcd_ScanDir );
+    TP_GetAdFac(); // default calibration factor 
+}
+
+uint16 xpt2046_event_loop(uint8 task_id, uint16 events) {
+     if (events & APP_TFT_TPIRQ_EVT) {
+//        LREPMaster("APP_TFT_TPIRQ_EVT\r\n");
+          uint8 press_down = TP_Scan(0);
+//          LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
+         zclApp_TPkeyprocessing();
+        
+        return (events ^ APP_TFT_TPIRQ_EVT);
+    }
+    
+    return 0;
+}    
+
+void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode) {
+  bool contact = portAndAction & HAL_KEY_PRESS ? TRUE : FALSE;
+  if (portAndAction & HAL_KEY_PORT0) {
+        LREPMaster("Key press PORT0\r\n");       
+        if (contact){
+          if (tp_pres){
+            osal_start_timerEx(xpt2046_TaskId, APP_TFT_TPIRQ_EVT, 10);
+          }
+          if (xpt2046_mode) {
+            tp_pres = 0;
+          }
+        } else {
+          tp_pres = 1;
+        }
+    }
+}
 
 /*******************************************************************************
   function:
@@ -77,7 +134,7 @@ static unsigned int TP_Read_ADC_Average(unsigned char Channel_Cmd)
   return Read_Temp;
 }
 
-void DelayUs(uint16 microSecs)
+static void DelayUs(uint16 microSecs)
 {
   while(microSecs--)
   {
@@ -146,17 +203,14 @@ static bool TP_Read_TwiceADC(unsigned int *pXCh_Adc, unsigned int  *pYCh_Adc )
                     1 : calibration
                     0 : relative position
 *******************************************************************************/
-//static unsigned char TP_Scan(unsigned char chCoordType)
-uint8 TP_Scan(uint8 chCoordType)
+static uint8 TP_Scan(uint8 chCoordType)
 {
   //In X, Y coordinate measurement, IRQ is disabled and output is low
-  if (!HAL_LCD_TPIRQ) {//Press the button to press
     //Read the physical coordinates
     if (chCoordType) {
       TP_Read_TwiceADC(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint);
       //Read the screen coordinates
     } else if (TP_Read_TwiceADC(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint)) {
-      //          DEBUG("(Xad,Yad) = %d,%d\r\n",sTP_DEV.Xpoint,sTP_DEV.Ypoint);
       if (sTP_DEV.TP_Scan_Dir == R2L_D2U) {       //Converts the result to screen coordinates
         sTP_Draw.Xpoint = (uint16)(sTP_DEV.fXfac * sTP_DEV.Xpoint) +
                           sTP_DEV.iXoff;
@@ -182,7 +236,6 @@ uint8 TP_Scan(uint8 chCoordType)
                           (uint16)(sTP_DEV.fYfac * sTP_DEV.Xpoint) -
                           sTP_DEV.iYoff;
       }
-      //          DEBUG("( x , y ) = %d,%d\r\n",sTP_Draw.Xpoint,sTP_Draw.Ypoint);
 //      LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
     }
     if (0 == (sTP_DEV.chStatus & TP_PRESS_DOWN)) {  //Not being pressed
@@ -190,16 +243,6 @@ uint8 TP_Scan(uint8 chCoordType)
       sTP_DEV.Xpoint0 = sTP_DEV.Xpoint;
       sTP_DEV.Ypoint0 = sTP_DEV.Ypoint;
     }
-  } else {
-    if (sTP_DEV.chStatus & TP_PRESS_DOWN) { //0x80
-      sTP_DEV.chStatus &= ~(1 << 7);      //0x00
-    } else {
-      sTP_DEV.Xpoint0 = 0;
-      sTP_DEV.Ypoint0 = 0;
-      sTP_DEV.Xpoint = 0xffff;
-      sTP_DEV.Ypoint = 0xffff;
-    }
-  }
 
   return (sTP_DEV.chStatus & TP_PRESS_DOWN);
 }
@@ -277,7 +320,7 @@ static void TP_ShowInfo(POINT Xpoint0, POINT Ypoint0,
   function:
         Touch screen adjust
 *******************************************************************************/
-void TP_Adjust(void)
+static void TP_Adjust(void)
 {
   unsigned char  cnt = 0;
   unsigned int XYpoint_Arr[4][2];
@@ -578,7 +621,7 @@ void TP_GetAdFac(void)
   function:
         Paint the Delete key and paint color choose area
 *******************************************************************************/
-void TP_Dialog(void)
+static void TP_Dialog(void)
 {
   LCD_Clear(LCD_BACKGROUND);
 //  DEBUG("Drawing...\r\n");
@@ -718,11 +761,22 @@ void TP_DrawBoard(void)
   function:
         Touch pad initialization
 *******************************************************************************/
-void TP_Init( LCD_SCAN_DIR Lcd_ScanDir )
+static void TP_Init( LCD_SCAN_DIR Lcd_ScanDir )
 {
 //  TP_CS_1;
 
   sTP_DEV.TP_Scan_Dir = Lcd_ScanDir;
 
   TP_Read_ADC_XY(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint);
+}
+
+static void DelayMs(unsigned int delaytime) {
+  while(delaytime--)
+  {
+    uint16 microSecs = 1000;
+    while(microSecs--)
+    {
+      asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
+    }
+  }
 }

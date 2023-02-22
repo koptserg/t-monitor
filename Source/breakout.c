@@ -1,5 +1,6 @@
 
 #ifdef TFT3IN5
+#ifdef BREAKOUT
 #include "OSAL.h"
 #include "OSAL_Clock.h"
 #include "Debug.h"
@@ -12,6 +13,9 @@
 #include "battery.h"
 #include "hal_adc.h"
 #include "beeping.h"
+#include "zcl_app.h"
+#include "zcl_app.h"
+#include "xpt2046.h"
 
 void create_butt(void);
 void gamerun(void);
@@ -66,7 +70,7 @@ uint8 tilesLeft = 0;
 
 static void _delay_us(uint16 microSecs);
 static void _delay_ms(uint16 milliSecs);
-bool zcl_game = 0;
+//bool zcl_game = 0;
 bool s_play = 0;
 bool game_over = 0;
 bool butt_pause = 0;
@@ -119,6 +123,7 @@ void breakout_keyprocessing(void)
             if (butt == 0 && !s_play && !butt_pause) {
                 s_play = 0;
                 zcl_game = 0;
+                xpt2046_mode = 1;
               return;
             }
             if (butt == 2) {
@@ -199,7 +204,7 @@ void breakout_start(void)
     }
   
   }
-  GUI_DisString_EN(100, 110, "BREAKOUT", &Font24, LCD_BACKGROUND, YELLOW);
+  GUI_DisString_EN(100, 110, "BREAKOUT", &Font20, LCD_BACKGROUND, YELLOW);
   
   create_butt();
   gamerun();
@@ -722,4 +727,5 @@ static void _delay_ms(uint16 milliSecs)
     _delay_us(1000);
   }
 }
+#endif //BREAKOUT
 #endif //TFT3IN5

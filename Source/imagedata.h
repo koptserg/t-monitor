@@ -10,6 +10,9 @@ extern const unsigned char IMAGE_ILLUMINANCE[];
 extern const unsigned char IMAGE_MOTION[];
 extern const unsigned char IMAGE_MOTION_NOT[];
 
+extern const unsigned char IMAGE_DOOR_OPEN[];
+extern const unsigned char IMAGE_DOOR_CLOSE[];
+
 extern const unsigned char IMAGE_BATTERY_100[];
 extern const unsigned char IMAGE_BATTERY_75[];
 extern const unsigned char IMAGE_BATTERY_50[];

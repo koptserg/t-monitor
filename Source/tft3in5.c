@@ -15,6 +15,20 @@
 #endif
 
 LCD_DIS sLCD_DIS;
+
+static void DelayMs(unsigned int delaytime);
+static void LCD_SetGramScanWay(LCD_SCAN_DIR Scan_dir);
+
+static void LCD_WriteReg(uint8 Reg);
+static void LCD_WriteData(uint8 Data);
+static void LCD_Write_AllData(uint16 Data, uint32 DataLen);
+static void LCD_Reset(void);
+static void LCD_InitReg(void);
+
+static void LCD_SetWindow(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend);
+static void LCD_SetCursor(POINT Xpoint, POINT Ypoint);
+static void LCD_SetColor(COLOR Color ,POINT Xpoint, POINT Ypoint);
+
 /*******************************************************************************
 function:
 	Hardware reset
@@ -33,12 +47,12 @@ static void LCD_SetBackLight(uint16 value)
 function:
 		Write register address and data
 *******************************************************************************/
-void LCD_WriteReg(uint8 Reg)
+static void LCD_WriteReg(uint8 Reg)
 {
   HalLcd_HW_Control(Reg);
 }
 
-void LCD_WriteData(uint8 Data)
+static void LCD_WriteData(uint8 Data)
 {
   HalLcd_HW_Write(Data);
 }
@@ -169,7 +183,7 @@ parameter:
 		Scan_dir   :   Scan direction
 		Colorchose :   RGB or GBR color format
 ********************************************************************************/
-void LCD_SetGramScanWay(LCD_SCAN_DIR Scan_dir)
+static void LCD_SetGramScanWay(LCD_SCAN_DIR Scan_dir)
 {
     uint16 MemoryAccessReg_Data = 0; //addr:0x36
     uint16 DisFunReg_Data = 0; //addr:0xB6
@@ -259,7 +273,7 @@ void LCD_Init(LCD_SCAN_DIR LCD_ScanDir, uint16 LCD_BLval)
     LCD_WriteReg(0x29);
 }
 
-void DelayMs(unsigned int delaytime) {
+static void DelayMs(unsigned int delaytime) {
   while(delaytime--)
   {
     uint16 microSecs = 1000;
@@ -278,7 +292,7 @@ parameter:
 	Xend    :   X direction end coordinates
 	Yend    :   Y direction end coordinates
 ********************************************************************************/
-void LCD_SetWindow(POINT Xstart, POINT Ystart,	POINT Xend, POINT Yend)
+static void LCD_SetWindow(POINT Xstart, POINT Ystart,	POINT Xend, POINT Yend)
 {
     //set the X coordinates
     LCD_WriteReg(0x2A);
@@ -302,7 +316,7 @@ parameter:
 	xStart :   X direction Start coordinates
 	xEnd   :   X direction end coordinates
 ********************************************************************************/
-void LCD_SetCursor(POINT Xpoint, POINT Ypoint)
+static void LCD_SetCursor(POINT Xpoint, POINT Ypoint)
 {
     LCD_SetWindow(Xpoint, Ypoint, Xpoint, Ypoint);
 }
@@ -313,7 +327,7 @@ parameter:
 		Color  :   Set show color,16-bit depth
 ********************************************************************************/
 //static void LCD_SetColor(LENGTH Dis_Width, LENGTH Dis_Height, COLOR Color ){
-void LCD_SetColor(COLOR Color , POINT Xpoint, POINT Ypoint)
+static void LCD_SetColor(COLOR Color , POINT Xpoint, POINT Ypoint)
 {
     LCD_Write_AllData(Color , (uint32_t)Xpoint * (uint32_t)Ypoint);
 }

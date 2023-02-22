@@ -7,7 +7,7 @@
 #define LOW_Speed_Show 0
 #define HIGH_Speed_Show 1
 
-#define BUTTON_COUNT_MAX  4
+#define BUTTON_COUNT_MAX  6
 
 /********************************************************************************
 function:
@@ -81,7 +81,7 @@ typedef struct {
   uint8 textsize;
   char label[9];
 } BUTTON;
-static BUTTON sButton[4];
+static BUTTON sButton[6];
 
 /********************************************************************************
 function:
@@ -89,7 +89,7 @@ function:
 ********************************************************************************/
 #define LCD_BACKGROUND		WHITE   //Default background color
 #define FONT_BACKGROUND		WHITE   //Default font background color
-#define FONT_FOREGROUND	    GRED    //Default font foreground color
+#define FONT_FOREGROUND	    GRAY    //Default font foreground color
 
 // Color definitions
 #define  BLACK       0x0000  ///<   0,   0,   0
@@ -114,6 +114,41 @@ function:
 #define  GREENYELLOW 0xAFE5  ///< 173, 255,  41
 #define  PINK        0xFC18  ///< 255, 130, 198
 
+#define  BLUE0        0x3A6E  ///< 62, 78, 114  
+#define  BLUE1        0x116C  ///< 19, 44, 98  
+#define  BLUE2        0x3AD3  ///< 59, 89, 153
+#define  BLUE3        0x6B99  ///< 110, 140, 204      
+#define  BLUE4        0x8CF9  ///< 138, 156, 202  
+#define  BLUE5        0x5BD6  ///< 95, 120, 176 
+#define  ORANG1       0xE569  ///< 228, 175, 73                 
+#define  ORANG2       0xA363  ///< 161, 111, 26 
+
+#define  RED0         0xAA8A  ///< 169, 83, 184  
+#define  RED1         0x90A3  ///< 147, 22, 26  
+#define  RED2         0xDA49  ///< 219, 75, 75
+#define  RED3         0xF3AE  ///< 240, 117, 120      
+#define  RED4         0xF4B3  ///< 240, 150, 152  
+#define  RED5         0xCB2C  ///< 207, 101, 101 
+#define  GREEN1       0x45A7  ///< 65, 183, 61                 
+#define  GREEN2       0x1421  ///< 19, 132, 14 
+
+#define  YELLOW0      0xAD4A  ///< 171, 169, 86  
+#define  YELLOW1      0x9482  ///< 148, 146, 23  
+#define  YELLOW2      0xE729  ///< 228, 228, 72
+#define  YELLOW3      0xF78E  ///< 240, 240, 118      
+#define  YELLOW4      0xF793  ///< 241, 241, 153  
+#define  YELLOW5      0xD66D  ///< 209, 207, 104 
+#define  PURPLE1      0x71B3  ///< 116, 54, 153                 
+#define  PURPLE2      0x508E  ///< 80, 19, 114 
+
+#define  GREEN_0      0x4448  ///< 71, 138, 67  
+#define  GREEN_1      0x1BC2  ///< 24, 120, 20  
+#define  GREEN_2      0x45A7  ///< 67, 183, 60
+#define  GREEN_3      0x76CD  ///< 113, 219, 108      
+#define  GREEN_4      0x8EF1  ///< 141, 220, 137  
+#define  GREEN_5      0x5DEB  ///< 95, 191, 91 
+#define  RED_1     0xE249  ///< 226, 72, 72                 
+#define  RED_2     0xA0A2  ///< 165, 20, 23 
 /********************************************************************************
 function:
 			Macro definition variable name
@@ -128,7 +163,9 @@ void GUI_Clear(COLOR Color);
 void GUI_DrawPoint(POINT Xpoint, POINT Ypoint, COLOR Color, DOT_PIXEL Dot_Pixel, DOT_STYLE Dot_FillWay);
 void GUI_DrawLine(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend, COLOR Color, LINE_STYLE Line_Style, DOT_PIXEL Dot_Pixel);
 void GUI_DrawRectangle(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend, COLOR Color, DRAW_FILL Filled , DOT_PIXEL Dot_Pixel );
+void GUI_DrawRoundRectangle(POINT r, POINT Xstart, POINT Ystart, POINT Xend, POINT Yend, COLOR Color, DRAW_FILL Filled, DOT_PIXEL Dot_Pixel);
 void GUI_DrawCircle(POINT X_Center, POINT Y_Center, LENGTH Radius, COLOR Color, DRAW_FILL Draw_Fill , DOT_PIXEL Dot_Pixel );
+void GUI_DrawCircleHelper(uint8 cornername, POINT X_Center, POINT Y_Center, LENGTH Radius, COLOR Color, DRAW_FILL Draw_Fill , DOT_PIXEL Dot_Pixel );
 
 //pic
 void GUI_Disbitmap(POINT Xpoint, POINT Ypoint, const unsigned char *pMap, POINT Width, POINT Height, COLOR Color, bool invert);

@@ -1,5 +1,11 @@
 #ifndef BME280SPI_H
 #define BME280SPI_H
+//#include "hal_types.h"
+//#include "hal_uart.h"
+
+#define APP_SPI_EVT               0x0001
+
+//extern halUARTCfg_t halUARTConfig;
 
 void bme_ConfigIO(void);
 void bme_ConfigIOInput(void);

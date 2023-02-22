@@ -17,6 +17,9 @@
 #include "breakout.h"
 #include "beeping.h"
 
+#include "xpt2046.h"
+#include "bme280spi.h"
+
 #include "Debug.h"
 
 #if defined ( MT_TASK )
@@ -35,8 +38,11 @@ const pTaskEventHandlerFn tasksArr[] = {macEventLoop,
                                         zcl_event_loop,
                                         bdb_event_loop,
                                         zclApp_event_loop,
-#if defined( TFT3IN5 )                                       
+#if defined( TFT3IN5 ) 
+                                        xpt2046_event_loop,
+#if defined(BREAKOUT)
                                         breakout_event_loop,
+#endif                                        
 #endif
 #if defined( HAL_LCD_PWM_PORT0 ) 
                                         beeping_event_loop,
@@ -65,8 +71,11 @@ void osalInitTasks(void) {
     zcl_Init(taskID++);
     bdb_Init(taskID++);
     zclApp_Init(taskID++);
-#if defined( TFT3IN5 )     
+#if defined( TFT3IN5 )
+    xpt2046_Init(taskID++);
+#if defined(BREAKOUT)
     breakout_Init(taskID++);
+#endif
 #endif
 #if defined( HAL_LCD_PWM_PORT0 )
     beeping_Init(taskID++);

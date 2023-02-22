@@ -16,6 +16,7 @@
 static void beeping_initTimer1(void);
 static void beep(uint16 freq, uint32 duration);
 static void beeping_seq_play(const uint16* song_buffer, uint16 w, uint8 tempo);
+static void DelayMs(uint32 delaytime);
 
 static uint16 c = 0;
 static uint8 songOn = 0;
@@ -101,6 +102,23 @@ static void beep(uint16 freq, uint32 duration){
                 //00: Tick frequency / 8
   
   osal_start_timerEx(beeping_TaskId, APP_BEEPING_DURATION_EVT, duration);
+}
+
+void beeping_beep_delay(uint16 freq, uint32 duration){
+  beep(freq, duration);  
+  DelayMs(duration);
+  beeping_stop_beep();
+}
+
+static void DelayMs(uint32 delaytime) {
+  while(delaytime--)
+  {
+    uint16 microSecs = 1000;
+    while(microSecs--)
+    {
+      asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
+    }
+  }
 }
 
 void beeping_seq_start(uint8 song_num) {

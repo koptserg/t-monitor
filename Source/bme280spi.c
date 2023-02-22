@@ -2,6 +2,7 @@
 #include "Debug.h"
 //#include "ZDApp.h"
 #include "hal_key.h"
+#include "OSAL.h"
 
 #include <stdlib.h>
 
@@ -153,14 +154,14 @@
   asm("NOP");                                                                 \
   asm("NOP");                                                                 \
   asm("NOP");                                                                 \
-  HAL_IO_SET(HAL_LCD_CS3_PORT,  HAL_LCD_CS3_PIN,  1); /* chip select 2*/         \
+  HAL_IO_SET(HAL_LCD_CS3_PORT,  HAL_LCD_CS3_PIN,  1); /* chip select 3*/         \
 }
 #endif
 
 /* clear the received and transmit byte status, write tx data to buffer, wait till transmit done */
-#define LCD_SPI_TX(x)                   { U1CSR &= ~(BV(2) | BV(1)); U1DBUF = x; while( !(U1CSR & BV(1)) ); }
+#define LCD_SPI_TX(x)                   { U1CSR &= ~(BV(2) | BV(1)); U1DBUF = x; /*while( !(U1CSR & BV(1)) ); */}
+#define LCD_SPI_TX_BUFF(x)              { HalUARTWrite(HAL_UART_PORT_1, &x, 1);}
 #define LCD_SPI_WAIT_RXRDY()            { while(!(U1CSR & BV(1))); }
-
 
 /* Control macros */
 #define LCD_DO_WRITE()        HAL_IO_SET(HAL_LCD_MODE_PORT,  HAL_LCD_MODE_PIN,  1);
@@ -216,7 +217,6 @@ int32 t_fine;
   int16 bme280_dig_H4; ///< humidity compensation value
   int16 bme280_dig_H5; ///< humidity compensation value
   int8 bme280_dig_H6;  ///< humidity compensation value
-
 
 uint8 LCD_SPI_WAIT_RX(void) { 
   while(!(U1CSR & BV(1))); 
@@ -335,7 +335,7 @@ void bme_ConfigSPI(void)
                                              // reaches maxRxBufSize
     halUARTConfig.idleTimeout = 10;          // this parameter indicates rx timeout period in millisecond
     halUARTConfig.rx.maxBufSize = 0;
-    halUARTConfig.tx.maxBufSize = 128;
+    halUARTConfig.tx.maxBufSize = 256;
     halUARTConfig.intEnable = TRUE;
     halUARTConfig.callBackFunc = NULL;
     HalUARTInit();
@@ -558,8 +558,9 @@ void bme280_takeForcedMeasurement(void) {
     bme280_write8(BME280_REGISTER_CONTROL, (SAMPLING_X16 << 5) | (SAMPLING_X16 << 2) | MODE_FORCED);
     // wait until measurement has been completed, otherwise we would read
     // the values from the last measurement
-    while (bme280_read8(BME280_REGISTER_STATUS) & 0x08)
+    while (bme280_read8(BME280_REGISTER_STATUS) & 0x08) {
       bme_HW_WaitUs(1000);
+    }
 
 }
 
@@ -687,6 +688,7 @@ void HalLcd_HW_Control(uint8 cmd)
   LCD_SPI_BEGIN2();
   LCD_DO_CONTROL();
   LCD_SPI_TX(cmd);
+//  LCD_SPI_TX_BUFF(cmd);
   LCD_SPI_WAIT_RXRDY();
   LCD_SPI_END2();
 }
@@ -705,6 +707,7 @@ void HalLcd_HW_Write(uint8 data)
   LCD_SPI_BEGIN2();
   LCD_DO_WRITE();
   LCD_SPI_TX(data);
+//  LCD_SPI_TX_BUFF(data);
   LCD_SPI_WAIT_RXRDY();
   LCD_SPI_END2();
 }
@@ -716,8 +719,12 @@ void HalLcd_HW_Write_AllData(uint16 data, uint32 datalen)
   uint32 i;
   for(i = 0; i < datalen; i++) {
     LCD_SPI_TX(data >> 8);
+//    uint8 dh= (data >> 8);
+//    LCD_SPI_TX_BUFF(dh);
     LCD_SPI_WAIT_RXRDY();
     LCD_SPI_TX(data & 0XFF);
+//    uint8 dl= (data & 0XFF);
+//    LCD_SPI_TX_BUFF(dl);
     LCD_SPI_WAIT_RXRDY();
   }
   LCD_SPI_END2();

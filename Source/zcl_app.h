@@ -30,7 +30,8 @@ extern "C" {
 #endif //EPD3IN7
 #if defined(TFT3IN5)
 //#define APP_TFT_DELAY_EVT               0x0100   
-#define APP_TFT_TP_EVT                      0x0100
+//#define APP_TFT_TP_EVT                  0x0100
+//#define APP_REPORT_CONFIG_DISPLAY_EVT   0x0100
 #ifdef HAL_LCD_PWM_PORT1   
 #define APP_TFT_LED_PWM_EVT             0x8000
 #endif //HAL_LCD_PWM_PORT1   
@@ -41,15 +42,6 @@ extern "C" {
 #define APP_REPORT_HUMIDITY_EVT         0x1000
 #define APP_REPORT_ILLUMINANCE_EVT      0x2000
 #define APP_REPORT_BATTERY_EVT          0x4000
-
-
-//#define AIR_COMPENSATION_FORMULA(ADC)   ((0.179 * (double)ADC + 3926.0))
-//#define WATER_COMPENSATION_FORMULA(ADC) ((0.146 * (double)ADC + 2020.0))
-
-
-
-//#define APP_REPORT_DELAY ((uint32) 1800000) //30 minutes
-//#define APP_REPORT_DELAY ((uint32) 60000) // 60 sec
 
 /*********************************************************************
  * MACROS
@@ -73,6 +65,7 @@ extern "C" {
 #define OCCUPANCY          ZCL_CLUSTER_ID_MS_OCCUPANCY_SENSING
 #define GEN_TIME           ZCL_CLUSTER_ID_GEN_TIME
 #define HVAC_UI_CONFIG     ZCL_CLUSTER_ID_HVAC_USER_INTERFACE_CONFIG
+#define BINARY_INPUT       ZCL_CLUSTER_ID_GEN_BINARY_INPUT_BASIC
 
 #define ZCL_BOOLEAN   ZCL_DATATYPE_BOOLEAN
 #define ZCL_UINT8     ZCL_DATATYPE_UINT8
@@ -98,8 +91,42 @@ extern "C" {
 #define ATTRID_POWER_CFG_BATTERY_PERIOD 0xF003
 #define ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE 0xF004
   
-//#define ATTRID_GEN_BINARY_INPUT_PRESENTVALUE 0x55
-
+#define ATTRID_GEN_BINARY_INPUT_PRESENTVALUE 0x55
+  
+// enable/disable display of values
+// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
+//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
+#define CB_LQI          0x0000
+#define CB_POWER_CFG    0x0001 //0 bit
+#define CB_ILLUMINANCE  0x0002
+#define CB_TEMP         0x0004
+#define CB_PRESSURE     0x0008
+#define CB_HUMIDITY     0x0010  
+#define CB_OCCUPANCY    0x0020 
+#define CB_BINARY_INPUT 0x0040
+#define CB_7            0x0080
+#define CB_8            0x0100
+#define CB_9            0x0200  
+#define CB_10           0x0400
+#define CB_11           0x0800
+#define CB_12           0x1000
+#define CB_13           0x2000
+#define CB_14           0x4000
+#define CB_TABLE        0x8000
+   
+//mask zclApp_Config.HvacUiDisplayMode
+// 0 - invert, 1 - rotate, 2 - backlight, 3 - none
+// 4,5 - color schtme, 
+#define DM_INVERT_NOT          0x01
+#define DM_ROTATE              0x02
+#define DM_BACKLIGHT           0x04
+#define DM_3                   0x08
+#define DM_BLUE                0x10
+#define DM_RED                 0x20
+#define DM_GREEN               0x40
+#define DM_7                   0x80
+      
+#define MAX_LEVEL_PWM          220 // min 254, max 0
 
 /*********************************************************************
  * TYPEDEFS
@@ -110,7 +137,7 @@ extern "C" {
  */
 
 extern SimpleDescriptionFormat_t zclApp_FirstEP;
-//extern SimpleDescriptionFormat_t zclApp_SecondEP;
+extern SimpleDescriptionFormat_t zclApp_SecondEP;
 extern SimpleDescriptionFormat_t zclApp_ThirdEP;
 extern SimpleDescriptionFormat_t zclApp_FourthEP;
 
@@ -131,7 +158,7 @@ extern uint16 zclApp_bh1750IlluminanceSensor_MeasuredValue;
 extern uint32 zclApp_GenTime_TimeUTC;
 
 //extern uint8 zclApp_Magnet_OnOff;
-//extern uint8 zclApp_Magnet;
+extern uint8 zclApp_Magnet;
 extern uint8 zclApp_Occupied_OnOff;
 // Occupancy Cluster 
 extern uint8 zclApp_Occupied; 
@@ -154,7 +181,6 @@ typedef struct
     uint16 MsHumidityPeriod;
     uint16 MsIlluminancePeriod;
     uint16 CfgBatteryPeriod;
-//    bool HvacUiDisplayMode;
     uint8 HvacUiDisplayMode;
 }  application_config_t;
 
@@ -162,12 +188,12 @@ extern application_config_t zclApp_Config;
 
 // attribute list
 extern CONST zclAttrRec_t zclApp_AttrsFirstEP[];
-//extern CONST zclAttrRec_t zclApp_AttrsSecondEP[];
+extern CONST zclAttrRec_t zclApp_AttrsSecondEP[];
 extern CONST zclAttrRec_t zclApp_AttrsThirdEP[];
 extern CONST zclAttrRec_t zclApp_AttrsFourthEP[];
 
-//extern CONST uint8 zclApp_AttrsSecondEPCount;
 extern CONST uint8 zclApp_AttrsFirstEPCount;
+extern CONST uint8 zclApp_AttrsSecondEPCount;
 extern CONST uint8 zclApp_AttrsThirdEPCount;
 extern CONST uint8 zclApp_AttrsFourthEPCount;
 
@@ -177,6 +203,9 @@ extern const uint8 zclApp_PowerSource;
 
 extern bool zcl_game;
 extern bool butt_quit;
+
+extern void zclApp_keyprocessing(void);
+extern void TftUpdateRefresh(void);
 
 //extern uint8 zclApp_BatteryManu[];
 
@@ -201,6 +230,8 @@ extern UINT16 zclApp_event_loop(byte task_id, UINT16 events);
 extern void zclApp_ResetAttributesToDefaultValues(void);
 
 static void zclApp_OnOffCB(uint8);
+
+extern void zclApp_TPkeyprocessing(void);
 
 #ifdef __cplusplus
 }

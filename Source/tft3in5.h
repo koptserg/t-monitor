@@ -54,21 +54,12 @@ typedef struct {
 function:
 			Macro definition variable name
 ********************************************************************************/
-void LCD_Init(LCD_SCAN_DIR LCD_ScanDir, uint16 LCD_BLval);
-void LCD_SetGramScanWay(LCD_SCAN_DIR Scan_dir);
+extern void LCD_Init(LCD_SCAN_DIR LCD_ScanDir, uint16 LCD_BLval);
+extern void LCD_SetPointlColor(POINT Xpoint, POINT Ypoint, COLOR Color);
+extern void LCD_SetArealColor(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend,COLOR  Color);
+extern void LCD_SetArealColorWH(POINT Xstart, POINT Ystart, LENGTH w, LENGTH h, COLOR Color);
+extern void LCD_Clear(COLOR  Color);
 
-void LCD_WriteReg(uint8 Reg);
-void LCD_WriteData(uint8 Data);
-
-void LCD_SetWindow(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend);
-void LCD_SetCursor(POINT Xpoint, POINT Ypoint);
-void LCD_SetColor(COLOR Color ,POINT Xpoint, POINT Ypoint);
-void LCD_SetPointlColor(POINT Xpoint, POINT Ypoint, COLOR Color);
-void LCD_SetArealColor(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend,COLOR  Color);
-void LCD_SetArealColorWH(POINT Xstart, POINT Ystart, LENGTH w, LENGTH h, COLOR Color);
-void LCD_Clear(COLOR  Color);
-
-void DelayMs(unsigned int delaytime);
 #endif /* TFT3IN5_H */
 
 /* END OF FILE */

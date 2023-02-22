@@ -3,6 +3,7 @@
 #include "OSAL.h"
 #include "OSAL_Clock.h"
 #include "OSAL_PwrMgr.h"
+#include "OSAL_Memory.h"
 #include "ZComDef.h"
 #include "ZDApp.h"
 #include "ZDNwkMgr.h"
@@ -51,7 +52,9 @@
 #include "tft3in5.h"
 #include "xpt2046.h"
 #include "lcdgui.h"
+#if defined(BREAKOUT) 
 #include "breakout.h"
+#endif
 #endif
 
 #if defined(EPD3IN7)
@@ -127,11 +130,11 @@ uint16 temp_Sender_shortAddr[3] = {0xFFFE , 0xFFFE, 0xFFFE};
 uint16 temp_Sender_extAddr[3] = {0xFFFE , 0xFFFE, 0xFFFE};
 uint8 temp_Battery_PercentageRemainig[3] = {0xFF , 0xFF, 0xFF};
 uint8 temp_Occupied[3];
+uint8 temp_Binary[3];
 
 bool EpdDetect = 1; 
 uint8 fullupdate_hour = 0;
 uint8 zclApp_color = 1;
-uint8 zclApp_EpdUpDown[3] = {0, 0, 0}; 
 uint32 zclApp_GenTime_old = 0;
 
 #ifdef LQI_REQ
@@ -142,15 +145,16 @@ uint8 temp_countReqLqi = 0;
 #ifdef MT_ZDO_MGMT
 //uint8 temp_countReqLqi = 0;
 #endif
-#ifdef BIND_REQ
+#ifdef BIND_REQ 
 uint8 temp_bindingCount[3] = {0, 0, 0};
 uint8 temp_bindingStartIndex[3] = {0, 0, 0};
 uint8 temp_countReqBind = 0;
 // enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received 
-uint8 temp_bindClusterDev[3] = {0x00, 0x00, 0x00};
-uint8 old_bindClusterDev[3]  = {0x00, 0x00, 0x00};
+// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
+//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
+uint16 temp_bindClusterDev[3] = {0x0000, 0x0000, 0x0000};
+uint16 old_bindClusterDev[3]  = {0x0000, 0x0000, 0x0000};
+uint16 zclApp_UpDown[3]       = {0x0000, 0x0000, 0x0000}; 
 uint16 zlcApp_ExtAddr = 0xFFFE;
 #endif
 
@@ -158,12 +162,18 @@ afAddrType_t inderect_DstAddr = {.addrMode = (afAddrMode_t)AddrNotPresent, .endP
 
 #if defined(TFT3IN5)
 extern TP_DRAW sTP_Draw;
-bool zcl_tp = 1;
+uint16 zclApp_lcd_background;
+bool zcl_game = 0;
+
+const uint16 color_scheme[3][8] = {BLUE0,    BLUE1,    BLUE2,    BLUE3,    BLUE4,    BLUE5,   ORANG1,   ORANG2,
+                                   RED0,     RED1,     RED2,     RED3,     RED4,     RED5,     GREEN1,  GREEN2,
+                                   GREEN_0,  GREEN_1,  GREEN_2,  GREEN_3,  GREEN_4,  GREEN_5,  RED_1,   RED_2};
+uint8 scheme = 1;
+uint8 zclApp_menu = 0;
 #endif //TFT3IN5
 
 //#define BUTTON_COUNT_MAX  4
 //extern BUTTON sButton[BUTTON_COUNT_MAX];
-//bool zcl_game = 0;
 //bool butt_pause = 0;
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -188,6 +198,7 @@ static void zclApp_bh1750StartLumosity(void);
 static void zclApp_bh1750ReadLumosity(void);
 static void zclApp_bh1750setMTreg(void);
 static void zclApp_MotionPullUpDown(void);
+static void zclApp_ConfigDisplay(void);
 
 #if defined(EPD3IN7)
 static void zclApp_EpdUpdateClock(void);
@@ -210,15 +221,23 @@ static void _delay_ms(uint16 milliSecs);
 #endif
 
 #if defined(TFT3IN5)
-//static void TftRefresh(void);
 static void TfttestRefresh(uint8 i);
+static void TftUpdateRefresh(void);
 static void TftTimeDateWeek(void);
 static void TftStatus(uint8 temp_s);
 static void TftBindStatus(uint8 temp_s);
 static void TftLqi(uint8 temp_l);
 static void TftNwk(uint8 temp_n);
 static void TftBattery(uint8 temp_b);
-static void TftWidgetMeasuredValue(uint8 dev_num, uint8 cluster_bit);
+static void TftOccupancy(uint8 temp_oc);
+static void TftBinary(uint8 temp_b);
+static void TftIlluminance(uint8 temp_i);
+static void TftTemperature(uint8 temp_t);
+static void TftHumidity(uint8 temp_h);
+static void TftPressure(uint8 temp_p);
+static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit);
+static void zclApp_keyprocessing(void);
+static void zclApp_create_butt_main(uint8 block);
 #if defined(HAL_LCD_PWM_PORT1)
 static void InitLedPWM(uint8 level);
 #endif
@@ -293,6 +312,7 @@ void zclApp_MotionPullUpDown(void) {
 
 void zclApp_Init(byte task_id) {
     zclApp_RestoreAttributesFromNV();
+        
 #ifdef HAL_LCD_PWM_PORT1    
     InitLedPWM(10);
 #endif
@@ -330,11 +350,11 @@ void zclApp_Init(byte task_id) {
     zcl_registerAttrList(zclApp_FirstEP.EndPoint, zclApp_AttrsFirstEPCount, zclApp_AttrsFirstEP);
     bdb_RegisterSimpleDescriptor(&zclApp_FirstEP);
     zcl_registerReadWriteCB(zclApp_FirstEP.EndPoint, NULL, zclApp_ReadWriteAuthCB);
-/*
+
     zcl_registerAttrList(zclApp_SecondEP.EndPoint, zclApp_AttrsSecondEPCount, zclApp_AttrsSecondEP);
     bdb_RegisterSimpleDescriptor(&zclApp_SecondEP);
     zcl_registerReadWriteCB(zclApp_SecondEP.EndPoint, NULL, zclApp_ReadWriteAuthCB);
-*/    
+    
     zcl_registerAttrList(zclApp_ThirdEP.EndPoint, zclApp_AttrsThirdEPCount, zclApp_AttrsThirdEP);
     bdb_RegisterSimpleDescriptor(&zclApp_ThirdEP);
     zcl_registerReadWriteCB(zclApp_ThirdEP.EndPoint, NULL, zclApp_ReadWriteAuthCB);
@@ -364,30 +384,22 @@ void zclApp_Init(byte task_id) {
     ZDO_RegisterForZDOMsg(zclApp_TaskID, IEEE_addr_rsp);
 #endif
 #if defined(TFT3IN5)
+  if (zclApp_Config.HvacUiDisplayMode & DM_BLUE){
+    scheme = 0;
+  }else if (zclApp_Config.HvacUiDisplayMode & DM_RED){
+    scheme = 1;
+  }else if (zclApp_Config.HvacUiDisplayMode & DM_GREEN){
+    scheme = 2;
+  }
+    
   LCD_SCAN_DIR Lcd_ScanDir = SCAN_DIR_DFT;    //SCAN_DIR_DFT = D2U_L2R
   LCD_Init( Lcd_ScanDir, 1);
-  GUI_Clear(WHITE);
   zclApp_SetTimeDate();
-//  TftRefresh();
-  if (!zcl_game){
-    TftTimeDateWeek(); // time, date, weekday
-    TftStatus(0); // status network device
-  } else {
-//    drawWallTiles();
-  }
-/*  
-  GUI_Show(); 
-  DEV_TIME sDev_time;
-  sDev_time.Hour = 23;
-  sDev_time.Min = 38;
-  sDev_time.Sec = 56;
-  GUI_Showtime(200, 150, 327, 197, &sDev_time, RED);
-*/
 
-  TP_Init( Lcd_ScanDir );
-  TP_GetAdFac(); // default calibration factor
-//  TP_Dialog();
-//  TP_Adjust();
+//  TP_Init( Lcd_ScanDir );
+//  TP_GetAdFac(); // default calibration factor
+
+  TftUpdateRefresh();
 
 #endif    
 #if defined(EPD3IN7)
@@ -404,17 +416,13 @@ void zclApp_Init(byte task_id) {
   }   
     
   if (EpdDetect == 1) { 
-    if (zclApp_Config.HvacUiDisplayMode & 0x01){
+    if (zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT){
       zclApp_color = 0xFF;
     } else {
       zclApp_color = 0x00;
     }
     // epd full screen
     EpdInitFull();
-//    EpdDisplayFrame();
-//    EpdSetFrameMemoryBase(IMAGE_DATA, zclApp_Config.HvacUiDisplayMode & 0x01);
-//    EpdDisplayFrame();
-//    _delay_ms(2000);
 
     EpdClearFrameMemory(zclApp_color);
     EpdDisplayFrame();
@@ -429,10 +437,7 @@ void zclApp_Init(byte task_id) {
     EpdDisplayFramePartial();
 
     zclApp_SetTimeDate();
-//    EpdTimeDateWeek(); // time, date, weekday
-//    EpdTimeDateWeek(); // time, date, weekday
-//    EpdStatus(0); // status network device
-//    EpdStatus(0); // status network device
+
     EpdRefresh();
 
   }
@@ -491,26 +496,29 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
           
           if (BindRsp->list[x].dstAddr.addr.shortAddr == zlcApp_ExtAddr) {
             // enable/disable display of values
-            // bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
-            //     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
+            // bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
+            //     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
             switch (BindRsp->list[x].clusterID){
               case POWER_CFG:
-                temp_bindClusterDev[bdev] |= BV(0);
+                temp_bindClusterDev[bdev] |= CB_POWER_CFG;
                 break;
               case ILLUMINANCE:
-                temp_bindClusterDev[bdev] |= BV(1);
+                temp_bindClusterDev[bdev] |= CB_ILLUMINANCE;
                 break;
               case TEMP:
-                temp_bindClusterDev[bdev] |= BV(2);
+                temp_bindClusterDev[bdev] |= CB_TEMP;
                 break;
               case PRESSURE:
-                temp_bindClusterDev[bdev] |= BV(3);
+                temp_bindClusterDev[bdev] |= CB_PRESSURE;
                 break;
               case HUMIDITY:
-                temp_bindClusterDev[bdev] |= BV(4);
+                temp_bindClusterDev[bdev] |= CB_HUMIDITY;
                 break;
               case OCCUPANCY:
-                temp_bindClusterDev[bdev] |= BV(5);
+                temp_bindClusterDev[bdev] |= CB_OCCUPANCY;
+                break;
+              case BINARY_INPUT:
+                temp_bindClusterDev[bdev] |= CB_BINARY_INPUT;
                 break;
             }           
           }
@@ -520,7 +528,6 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
 //          LREPMaster("BIND_BIND_BIND\r\n");
           temp_bindingStartIndex[bdev] = temp_bindingStartIndex[bdev] +3;
           temp_countReqBind = bdev;
-//          zclApp_RequestBind();
           osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
         } else {
           LREPMaster("BIND_BIND_0\r\n");
@@ -531,7 +538,7 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
             temp_LqiStartIndex[bdev] = 0;
             temp_lqi[bdev] = 255;
           } else {
-            temp_bindClusterDev[bdev] |= BV(7);
+            temp_bindClusterDev[bdev] |= CB_TABLE;
           }
           if (temp_bindClusterDev[bdev] != old_bindClusterDev[bdev]) {
             old_bindClusterDev[bdev] = temp_bindClusterDev[bdev];
@@ -661,7 +668,13 @@ void zclApp_RequestBind(void){
         destAddr.addrMode = Addr16Bit;
 //        destAddr.addr.shortAddr = _NIB.nwkCoordAddress; // Parent, Coordinator always address 0
 //        destAddr.addr.shortAddr = 0x4436; 
-      if (temp_Sender_shortAddr[temp_countReqBind] != 0xFFFE) { 
+      if (temp_Sender_shortAddr[temp_countReqBind] != 0xFFFE) {
+        temp_bindClusterDev[temp_countReqBind] &= ~CB_TABLE;
+#if defined(TFT3IN5)
+        if (!zcl_game){
+          TftBindStatus(temp_countReqBind);
+        }
+#endif  
         destAddr.addr.shortAddr = temp_Sender_shortAddr[temp_countReqBind];      
         startIndex = temp_bindingStartIndex[temp_countReqBind];
         ZDP_MgmtBindReq(&destAddr,startIndex, 0);
@@ -675,7 +688,7 @@ void zclApp_RequestBind(void){
 #if defined(EPD3IN7)
 static void zclApp_EpdUpdateClock(void) {
 //        if (EpdDetect == 1) {
-          if (zclApp_Config.HvacUiDisplayMode & 0x01){
+          if (zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT){
               zclApp_color = 0xFF;
           } else {
               zclApp_color = 0x00;
@@ -765,14 +778,12 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         // return unprocessed events
         return (events ^ SYS_EVENT_MSG);
     }
-#ifdef BIND_REQ
-   
+#ifdef BIND_REQ   
     if (events & APP_REQ_BIND_EVT) {
         LREPMaster("APP_REQ_BIND_EVT\r\n");
         zclApp_RequestBind();
         return (events ^ APP_REQ_BIND_EVT);
     }
-
 #endif 
     if (events & APP_REPORT_CLOCK_EVT) {
       LREPMaster("APP_REPORT_CLOCK_EVT\r\n");
@@ -790,7 +801,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
       }
       zclApp_GenTime_old = zclApp_GenTime_TimeUTC;
       
-      if(zclApp_Occupied == 1 || bdbAttributes.bdbNodeIsOnANetwork == 0) {  
+//      if(zclApp_Occupied == 1 || bdbAttributes.bdbNodeIsOnANetwork == 0) {  
 //        osalTimeUpdate();
 //        zclApp_GenTime_TimeUTC = osal_getClock();                
 #ifdef LQI_REQ        
@@ -807,7 +818,6 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
           temp_bindingStartIndex[temp_countReqBind] = 0;
         }
         temp_bindClusterDev[temp_countReqBind] = 0x00;
-//        zclApp_RequestBind();
         osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
 #endif 
 #if defined(EPD3IN7)        
@@ -816,24 +826,20 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
           zclApp_EpdUpdateClock();          
           fullupdate_hour = 0;
 /*          
-          EpdStatus(0); // status network device
-          EpdStatus(0); // status network device
           for(uint8 i = 0; i <= 2; i++ ){
             EpdtestRefresh(i);
           }
 */          
-        }
-//        EpdTimeDateWeek(); // update time, date, weekday
-//        EpdTimeDateWeek(); // update time, date, weekday        
+        }       
         EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)        
 //        TftRefresh();
-        if (!zcl_game){
+        if (!zcl_game && zclApp_menu == 0){
           TftTimeDateWeek(); // update time, date, weekday
         }
 #endif        
-      }
+//      }
         return (events ^ APP_REPORT_CLOCK_EVT);
     }
 
@@ -937,38 +943,6 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         return (events ^ APP_EPD_DELAY_EVT);
     }
 #endif // EPD3IN7
-#if defined(TFT3IN5)
-//    if (events & APP_TFT_DELAY_EVT) {
-//        LREPMaster("APP_TFT_DELAY_EVT\r\n");
-//        TfttestRefresh();
-        
-//        return (events ^ APP_TFT_DELAY_EVT);
-//    }
-    
-    if (events & APP_TFT_TP_EVT) {
-//        LREPMaster("APP_TFT_TP_EVT\r\n");
-          uint8 press_down = TP_Scan(0);
-          LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);          
-          if (!zcl_game){
-            zcl_game = 1;
-            breakout_start();
-          } else {
-            breakout_keyprocessing();
-            if (!zcl_game) {
-              GUI_Clear(WHITE);
-              TftStatus(0);
-              TftTimeDateWeek();
-              for (uint8 i = 0; i <= 2; i++) {
-                if (temp_Sender_shortAddr[i] != 0xFFFE){
-                  TfttestRefresh(i);
-                }
-              }
-            }           
-          }
-          
-        return (events ^ APP_TFT_TP_EVT);
-    }
-#endif // TFT3IN5     
     if (events & APP_BH1750_DELAY_EVT) {
         LREPMaster("APP_BH1750_DELAY_EVT\r\n");
         zclApp_bh1750ReadLumosity();
@@ -989,9 +963,17 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
 
 static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
 //    LREP("zclApp_HandleKeys portAndAction=0x%X keyCode=0x%X\r\n", portAndAction, keyCode);
+#if APP_COMMISSIONING_BY_LONG_PRESS == TRUE
+    if (bdbAttributes.bdbNodeIsOnANetwork == 1) {
+      zclFactoryResetter_HandleKeys(portAndAction, keyCode);
+    }
+#else
     zclFactoryResetter_HandleKeys(portAndAction, keyCode);
+#endif
     zclCommissioning_HandleKeys(portAndAction, keyCode); 
-    
+#if defined(TFT3IN5)    
+    xpt2046_HandleKeys(portAndAction, keyCode);
+#endif    
     if (portAndAction & HAL_KEY_PRESS) {
 //        LREPMaster("Key press\r\n");
     }
@@ -999,16 +981,7 @@ static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
     bool contact = portAndAction & HAL_KEY_PRESS ? TRUE : FALSE;
     if (portAndAction & HAL_KEY_PORT0) {
         LREPMaster("Key press PORT0\r\n");
-#if defined(TFT3IN5)        
-        if (contact){
-          if (zcl_tp){
-            osal_start_timerEx(zclApp_TaskID, APP_TFT_TP_EVT, 10);
-          }
-//          zcl_tp = 0;
-        } else {
-//          zcl_tp = 1;
-        }
-#endif //TFT3IN5
+
     } else if (portAndAction & HAL_KEY_PORT1) {     
         LREPMaster("Key press PORT1\r\n");
         if (!contact) {
@@ -1087,27 +1060,25 @@ static void zclApp_ReadSensors(void) {
       }      
         break;
      case 6:
-      if (EpdDetect == 1){
-        bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HVAC_UI_CONFIG, ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE);
-      }
+       zclApp_ConfigDisplay();
+
         break;
      case 7:
        zclApp_LocalTime();
         break;
     case 8:
 #ifdef LQI_REQ
-        temp_countReqLqi = 0;
-        zclApp_RequestLqi();
+       temp_countReqLqi = 0;
+       zclApp_RequestLqi();
 #endif        
         break;
     case 9: 
 #ifdef BIND_REQ
-//        temp_countReqBind = 0;
-//        temp_bindingCount[temp_countReqBind] = 0;
-//        temp_bindingStartIndex[temp_countReqBind] = 0;
-//        temp_bindClusterDev[temp_countReqBind] = 0x00;
-//        zclApp_RequestBind();
-//      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+      temp_countReqBind = 0;
+      temp_bindingCount[temp_countReqBind] = 0;
+      temp_bindingStartIndex[temp_countReqBind] = 0;
+      temp_bindClusterDev[temp_countReqBind] = 0x00;
+      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
 #endif
         break;
     default:
@@ -1118,6 +1089,10 @@ static void zclApp_ReadSensors(void) {
     }
   }
   zclApp_StartReloadTimer();
+}
+
+static void zclApp_ConfigDisplay(void) {
+  bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HVAC_UI_CONFIG, ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE);
 }
 
 static void zclApp_LocalTime(void) {
@@ -1151,12 +1126,15 @@ static void zclApp_bh1750ReadLumosity(void) {
     }
 #ifdef HAL_LCD_PWM_PORT1
     uint8 levelPWM = 0;
-    if (zclApp_bh1750IlluminanceSensor_MeasuredValue > 220){
-      levelPWM = 220;
+    if (zclApp_bh1750IlluminanceSensor_MeasuredValue > MAX_LEVEL_PWM){
+      levelPWM = MAX_LEVEL_PWM;
     } else {
       levelPWM = (uint8)zclApp_bh1750IlluminanceSensor_MeasuredValue;
     }
-    InitLedPWM(254-levelPWM);
+    if (zclApp_Config.HvacUiDisplayMode & DM_BACKLIGHT){
+      levelPWM = MAX_LEVEL_PWM;
+    }
+    InitLedPWM(254-levelPWM);    
 #endif
     LREP("bh1750IlluminanceSensor_MeasuredValue value=%X\r\n", zclApp_bh1750IlluminanceSensor_MeasuredValue);
 }
@@ -1173,12 +1151,6 @@ static void zclApp_ReadBME280Temperature(void) {
           temp = (zclApp_Temperature_Sensor_MeasuredValue - old_Temperature_Sensor_MeasuredValue);
         }
         if (temp > zclApp_Config.MsTemperatureMinAbsoluteChange || report == 1){ //50 - 0.5 
-//          if (temp_Temperature_Sensor_MeasuredValue[0] > zclApp_Temperature_Sensor_MeasuredValue){
-//            zclApp_EpdUpDown &= ~BV(1); // down
-//          } else {
-//            zclApp_EpdUpDown |=  BV(1); // up
-//          }
-//          temp_Temperature_Sensor_MeasuredValue[0] = zclApp_Temperature_Sensor_MeasuredValue;
           old_Temperature_Sensor_MeasuredValue = zclApp_Temperature_Sensor_MeasuredValue;
           bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, TEMP, ATTRID_MS_TEMPERATURE_MEASURED_VALUE);
         }        
@@ -1198,13 +1170,6 @@ static void zclApp_ReadBME280Pressure(void) {
           press = (zclApp_PressureSensor_MeasuredValue - old_PressureSensor_MeasuredValue);
         }
         if (press > zclApp_Config.MsPressureMinAbsoluteChange || report == 1){ //1gPa
-//          if (temp_PressureSensor_MeasuredValue[0] > zclApp_PressureSensor_MeasuredValue){
-//            zclApp_EpdUpDown &= ~BV(3); // down
-//          } else {
-//            zclApp_EpdUpDown |=  BV(3); // up
-//          }
-//          temp_PressureSensor_MeasuredValue[0] = zclApp_PressureSensor_MeasuredValue;
-//          temp_PressureSensor_ScaledValue[0] = zclApp_PressureSensor_ScaledValue;
           old_PressureSensor_MeasuredValue = zclApp_PressureSensor_MeasuredValue;
           old_PressureSensor_ScaledValue = zclApp_PressureSensor_ScaledValue;
           bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, PRESSURE, ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE);
@@ -1222,13 +1187,7 @@ static void zclApp_ReadBME280Humidity(void) {
         } else {
           humid = (zclApp_HumiditySensor_MeasuredValue - old_HumiditySensor_MeasuredValue);
         }
-        if (humid > zclApp_Config.MsHumidityMinAbsoluteChange || report == 1){ //10%
-//          if (temp_HumiditySensor_MeasuredValue[0] > zclApp_HumiditySensor_MeasuredValue){
-//            zclApp_EpdUpDown &= ~BV(2); // down
-//          } else {
-//            zclApp_EpdUpDown |=  BV(2); // up
-//          }
-//          temp_HumiditySensor_MeasuredValue[0] = zclApp_HumiditySensor_MeasuredValue;
+        if (humid > zclApp_Config.MsHumidityMinAbsoluteChange || report == 1 ){ //10%
           old_HumiditySensor_MeasuredValue = zclApp_HumiditySensor_MeasuredValue;
           bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HUMIDITY, ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE);
         }
@@ -1263,9 +1222,9 @@ static void zclApp_SaveAttributesToNV(void) {
     EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)    
-//    TftRefresh();
     if (!zcl_game){
-      TftTimeDateWeek(); // time, date, weekday
+//      TftTimeDateWeek(); // time, date, weekday
+      TftUpdateRefresh();
     }
 #endif // TFT3IN5    
     zclApp_bh1750setMTreg();
@@ -1380,6 +1339,7 @@ static void TftTimeDateWeek(void){
   osalTimeUpdate();
   UTCTimeStruct time;
   osal_ConvertUTCTime(&time, osal_getClock());
+  uint16 foreground = WHITE;
 
   char time_string[] = {'0', '0', ':', '0', '0', '\0'};
   time_string[0] = time.hour / 10 % 10 + '0';
@@ -1387,12 +1347,8 @@ static void TftTimeDateWeek(void){
   time_string[3] = time.minutes / 10 % 10 + '0';
   time_string[4] = time.minutes % 10 + '0';
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    GUI_DrawRectangle(100, 16, 220, 64, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    GUI_DisString_EN(100, 16, time_string, &Font48, LCD_BACKGROUND, BLUE);
-  } else { // landscape
-
-  }
+  GUI_DrawRectangle(100, 16, 220, 64, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+  GUI_DisString_EN(100, 16, time_string, &Font48, zclApp_lcd_background, foreground);
   
   // covert UTCTimeStruct date and month to display
   time.day = time.day + 1;
@@ -1405,12 +1361,8 @@ static void TftTimeDateWeek(void){
   date_string[6] = time.year / 10 % 10 + '0';
   date_string[7] = time.year % 10 + '0';
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    GUI_DrawRectangle(116, 64, 212, 80, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    GUI_DisString_EN(116, 64, date_string, &Font16, LCD_BACKGROUND, BLUE);
-  } else { //landscape
-
-  }
+  GUI_DrawRectangle(116, 64, 212, 80, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+  GUI_DisString_EN(116, 64, date_string, &Font16, zclApp_lcd_background, foreground);
 
   uint8 day_week = (uint16)floor((float)(zclApp_GenTime_TimeUTC/86400)) % 7;
   char* day_string = "";
@@ -1430,13 +1382,8 @@ static void TftTimeDateWeek(void){
     day_string = "Wednesday";
   }
   
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    GUI_DrawRectangle(116, 80, 224, 96, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    GUI_DisString_EN(116, 80, day_string, &Font16, LCD_BACKGROUND, BLUE);
-  } else { //landscape
-
-  }
-
+  GUI_DrawRectangle(116, 80, 224, 96, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+  GUI_DisString_EN(116, 80, day_string, &Font16, zclApp_lcd_background, foreground);
 }
 #endif
 
@@ -1457,7 +1404,7 @@ static void EpdTimeDateWeek(void){
   time_string[3] = time.minutes / 10 % 10 + '0';
   time_string[4] = time.minutes % 10 + '0';
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(120);
     PaintSetHeight(48);
     PaintSetRotate(ROTATE_0);
@@ -1484,7 +1431,7 @@ static void EpdTimeDateWeek(void){
   date_string[6] = time.year / 10 % 10 + '0';
   date_string[7] = time.year % 10 + '0';
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(88);
     PaintSetHeight(16);
     PaintSetRotate(ROTATE_0);
@@ -1518,7 +1465,7 @@ static void EpdTimeDateWeek(void){
     day_string = "Wednesday";
   }
   
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(99);
     PaintSetHeight(16);
     PaintSetRotate(ROTATE_0);
@@ -1544,19 +1491,13 @@ static void TftStatus(uint8 temp_s){
   uint8 row = temp_s *120;
   
   //status network
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    if ( bdbAttributes.bdbNodeIsOnANetwork ){
-      GUI_DrawRectangle(8, 8, 24, 24, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
+  if ( bdbAttributes.bdbNodeIsOnANetwork ){
+      GUI_DrawRectangle(8, 8, 24, 24, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
       GUI_Disbitmap(8, 8 + row , IMAGE_ONNETWORK, 16, 16, BLUE, 0);
-    } else {
-      GUI_DrawRectangle(8, 8, 24, 24, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
+  } else {
+      GUI_DrawRectangle(8, 8, 24, 24, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
       GUI_Disbitmap(8, 8 + row , IMAGE_OFFNETWORK, 16, 16, BLUE, 0);
-//      GUI_DrawRectangle(8, 8, 24, 30, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-//      GUI_Disbitmap(8, 8 + row , IMAGE_LQI_100, 25, 16, BLUE, 0);
-    } 
-  } else { // landscape    
-    
-  }
+  } 
 }
 #endif
 
@@ -1568,12 +1509,12 @@ static void EpdStatus(uint8 temp_s){
   uint8 row = temp_s *120;
   
   //status network
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     
     PaintSetWidth(16);
     PaintSetHeight(16);
     PaintSetRotate(ROTATE_90);
-    PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & 0x01));
+    PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT));
     PaintClear(UNCOLORED);
     if ( bdbAttributes.bdbNodeIsOnANetwork ){
       PaintDrawImage(IMAGE_ONNETWORK, 0, 0, 16, 16, COLORED);
@@ -1584,12 +1525,12 @@ static void EpdStatus(uint8 temp_s){
 //      EpdSetFrameMemoryXY(PaintGetImage(), 8, 128 + row, PaintGetWidth(), PaintGetHeight());   
       EpdSetFrameMemoryXY(PaintGetImage(), 8, 8 + row, PaintGetWidth(), PaintGetHeight());
     }
-    PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);    
+    PaintSetInvert(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);    
   } else { // landscape    
     if ( bdbAttributes.bdbNodeIsOnANetwork ){
-      EpdSetFrameMemoryImageXY(IMAGE_ONNETWORK, 264, 1, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_ONNETWORK, 264, 1, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     } else {
-      EpdSetFrameMemoryImageXY(IMAGE_OFFNETWORK, 264, 1, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_OFFNETWORK, 264, 1, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
     PaintSetWidth(8);
     PaintSetHeight(480);
@@ -1613,18 +1554,24 @@ static void EpdStatus(uint8 temp_s){
 #if defined(TFT3IN5)
 static void TftBindStatus(uint8 temp_s){
     //status bind
-  uint8 row = temp_s *120;
+  uint8 row = 0;
+  uint8 col = 0;
   char* bind_string = " ";
-  if(temp_bindClusterDev[temp_s] & 0x80) {
+  uint16 foreground = WHITE;
+  
+  if(temp_bindClusterDev[temp_s] & CB_TABLE) {
     bind_string = "B";
   }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    GUI_DrawRectangle(8, 128 + row, 20, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    GUI_DisString_EN(8, 128 + row, bind_string, &Font16, LCD_BACKGROUND, BLUE);  
+  if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ // portrait
+    row = temp_s *120;
+    col = 0;  
   } else { // landscape    
-    
+    row = 0;
+    col = temp_s *106;
   }
+  GUI_DrawRectangle(8 + col, 120 + row, 16 + col, 120 + row + 16, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+  GUI_DisString_EN(8 + col, 120 + row, bind_string, &Font16, zclApp_lcd_background, foreground);
 }
 #endif
 
@@ -1635,11 +1582,11 @@ static void EpdBindStatus(uint8 temp_s){
     //status bind
   uint8 row = temp_s *120;
   char* bind_string = " ";
-  if(temp_bindClusterDev[temp_s] & 0x80) {
+  if(temp_bindClusterDev[temp_s] & CB_TABLE) {
     bind_string = "B";
   }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
 
     PaintSetWidth(16);
     PaintSetHeight(16);
@@ -1659,44 +1606,8 @@ static void EpdBindStatus(uint8 temp_s){
 #if defined(TFT3IN5)
 static void TftLqi(uint8 temp_l){
 #ifdef LQI_REQ  
-  // LQI 
-  uint8 row = temp_l *120;
-  char lqi_string[] = {' ', ' ', ' ', '\0'};
-  if (temp_Sender_shortAddr[temp_l] != 0xFFFE) {
-    if (temp_lqi[temp_l] != 255) { 
-      lqi_string[0] = temp_lqi[temp_l] / 100 % 10 + '0';
-      lqi_string[1] = temp_lqi[temp_l] / 10 % 10 + '0';
-      lqi_string[2] = temp_lqi[temp_l] % 10 + '0';
-    }
-  }
-  
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    if (temp_Sender_shortAddr[temp_l] != 0xFFFE) {
-      if (temp_lqi[temp_l] != 255) {
-        GUI_DrawRectangle(64, 128 + row, 64+36, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-        GUI_DisString_EN(64, 128 + row, lqi_string, &Font16, LCD_BACKGROUND, BLUE);  
-        
-        GUI_DrawRectangle(32-1, 128-1 + row, 32+24, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );        
-        if(temp_lqi[temp_l] > 40){
-          GUI_Disbitmap(32, 128 + row , IMAGE_LQI_100, 25, 16, BLUE, 0);          
-        } else if (temp_lqi[temp_l] <= 40 && temp_lqi[temp_l] > 30) {
-          GUI_Disbitmap(32, 128 + row , IMAGE_LQI_80, 25, 16, BLUE, 0);
-        } else if (temp_lqi[temp_l] <= 30 && temp_lqi[temp_l] > 20) {
-          GUI_Disbitmap(32, 128 + row , IMAGE_LQI_60, 25, 16, BLUE, 0);
-        } else if (temp_lqi[temp_l] <= 20 && temp_lqi[temp_l] > 10) {
-          GUI_Disbitmap(32, 128 + row , IMAGE_LQI_40, 25, 16, BLUE, 0);
-        } else if (temp_lqi[temp_l] <= 10 && temp_lqi[temp_l] > 0) {
-          GUI_Disbitmap(32, 128 + row , IMAGE_LQI_20, 25, 16, BLUE, 0);
-        } else if (temp_lqi[temp_l] == 0) {
-          GUI_Disbitmap(32, 128 + row , IMAGE_LQI_0, 25, 16, BLUE, 0);
-        }       
-      }
-    } else {
-      GUI_DrawRectangle(32-1, 128-1 + row, 64+36, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );      
-    }     
-  } else { // lanscape
-
-  }
+  // LQI
+  TftWidgetMeasuredValue(temp_l, CB_LQI); //0x00 LQI
 #endif  //LQI_REQ
 }
 #endif  // TFT3IN5
@@ -1717,13 +1628,13 @@ static void EpdLqi(uint8 temp_l){
     }
   }
   
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     if (temp_Sender_shortAddr[temp_l] != 0xFFFE) {
       if (temp_lqi[temp_l] != 255) { 
         PaintSetWidth(24);
         PaintSetHeight(16);
         PaintSetRotate(ROTATE_270);
-        PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & 0x01));
+        PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT));
         PaintClear(UNCOLORED);
         if(temp_lqi[temp_l] > 40){
           PaintDrawImage(IMAGE_LQI_100, 0, 0, 16, 24, COLORED);
@@ -1739,7 +1650,7 @@ static void EpdLqi(uint8 temp_l){
           PaintDrawImage(IMAGE_LQI_0, 0, 0, 16, 24, COLORED);
         }
         EpdSetFrameMemoryXY(PaintGetImage(), 32, 128 + row, PaintGetWidth(), PaintGetHeight());
-        PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
+        PaintSetInvert(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       }
     } else {
       PaintSetWidth(36);
@@ -1765,17 +1676,17 @@ static void EpdLqi(uint8 temp_l){
       PaintDrawStringAt(0, 0, lqi_string, &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 256, 64, PaintGetWidth(), PaintGetHeight());
       if(temp_lqi[0] > 40){
-        EpdSetFrameMemoryImageXY(IMAGE_LQI_100, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_LQI_100, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (temp_lqi[0] <= 40 && temp_lqi[0] > 30) {
-        EpdSetFrameMemoryImageXY(IMAGE_LQI_80, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_LQI_80, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (temp_lqi[0] <= 30 && temp_lqi[0] > 20) {
-        EpdSetFrameMemoryImageXY(IMAGE_LQI_60, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_LQI_60, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (temp_lqi[0] <= 20 && temp_lqi[0] > 10) {
-        EpdSetFrameMemoryImageXY(IMAGE_LQI_40, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_LQI_40, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (temp_lqi[0] <= 10 && temp_lqi[0] > 0) {
-        EpdSetFrameMemoryImageXY(IMAGE_LQI_20, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_LQI_20, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (temp_lqi[0] == 0) {
-        EpdSetFrameMemoryImageXY(IMAGE_LQI_0, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_LQI_0, 256, 34, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       }
     }
   }
@@ -1788,7 +1699,9 @@ static void EpdLqi(uint8 temp_l){
 #if defined(TFT3IN5)
 static void TftNwk(uint8 temp_n){  
   // nwkDevAddress
-    uint8 row = temp_n *120;
+    uint8 row = 0;
+    uint8 col = 0;
+    uint16 foreground = WHITE;
     char nwk_string[] = {' ', ' ', ' ', ' ', ' ', ' ', '\0'};
     if (temp_Sender_shortAddr[temp_n] != 0xFFFE) {
       nwk_string[0] = '0';
@@ -1811,14 +1724,15 @@ static void TftNwk(uint8 temp_n){
       }
     }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait   
-    GUI_DrawLine(8, 120+1 + row, 312, 120+1 + row, BLUE, LINE_SOLID, DOT_PIXEL_DFT);
-    
-    GUI_DrawRectangle(208, 128 + row, 208+72, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    GUI_DisString_EN(208, 128 + row, nwk_string, &Font16, LCD_BACKGROUND, BLUE); 
-  } else { // landscape  
-
+  if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ // portrait
+    row = temp_n *120;
+    col = 0;
+  } else { // landscape
+    row = 0;
+    col = temp_n *106;
   }
+  GUI_DrawRectangle(32 + col, 120 + row, 32 + col + 72, 120 + row + 16, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+  GUI_DisString_EN(32 + col, 120 + row, nwk_string, &Font16, zclApp_lcd_background, foreground); 
 }
 #endif
 
@@ -1850,7 +1764,7 @@ static void EpdNwk(uint8 temp_n){
       }
     }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(264);
     PaintSetHeight(8);
     PaintSetRotate(ROTATE_90); 
@@ -1880,43 +1794,7 @@ static void EpdNwk(uint8 temp_n){
 #if defined(TFT3IN5)
 static void TftBattery(uint8 temp_b){
   //percentage
-  uint8 row = temp_b *120;
-  char perc_string[] = {' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_b] & 0x01){
-    if (temp_Battery_PercentageRemainig[temp_b] != 0xFF) {
-      perc_string[0] = temp_Battery_PercentageRemainig[temp_b]/2 / 100 % 10 + '0';
-      perc_string[1] = temp_Battery_PercentageRemainig[temp_b]/2 / 10 % 10 + '0';
-      perc_string[2] = temp_Battery_PercentageRemainig[temp_b]/2 % 10 + '0';
-      perc_string[3] = '%';
-    }
-  }
-
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait    
-    
-    if (old_bindClusterDev[temp_b] & 0x01){
-      if (temp_Battery_PercentageRemainig[temp_b] != 0xFF) {
-        GUI_DrawRectangle(148, 128 + row, 148+48, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-        GUI_DisString_EN(148, 128 + row, perc_string, &Font16, LCD_BACKGROUND, BLUE); 
-    
-        GUI_DrawRectangle(112-1, 128-1 + row, 112+24, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );        
-        if(temp_Battery_PercentageRemainig[temp_b]/2 > 75){
-          GUI_Disbitmap(112, 128 + row , IMAGE_BATTERY_100, 25, 16, BLUE, 0);
-        } else if (temp_Battery_PercentageRemainig[temp_b]/2 <= 75 && temp_Battery_PercentageRemainig[temp_b]/2 > 50) {
-          GUI_Disbitmap(112, 128 + row , IMAGE_BATTERY_75, 25, 16, BLUE, 0);
-        } else if (temp_Battery_PercentageRemainig[temp_b]/2 <= 50 && temp_Battery_PercentageRemainig[temp_b]/2 > 25) {
-          GUI_Disbitmap(112, 128 + row , IMAGE_BATTERY_50, 25, 16, BLUE, 0);
-        } else if (temp_Battery_PercentageRemainig[temp_b]/2 <= 25 && temp_Battery_PercentageRemainig[temp_b]/2 > 6) {
-          GUI_Disbitmap(112, 128 + row , IMAGE_BATTERY_25, 25, 16, BLUE, 0);
-        } else if (temp_Battery_PercentageRemainig[temp_b]/2 <= 6 && temp_Battery_PercentageRemainig[temp_b]/2 > 0) {
-          GUI_Disbitmap(112, 128 + row , IMAGE_BATTERY_0, 25, 16, BLUE, 0);
-        }
-      }
-    } else {
-      GUI_DrawRectangle(112-1, 128-1 + row, 148+48, 128 + row + 16, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    }      
-  } else { // landscape
-
-  }
+  TftWidgetMeasuredValue(temp_b, CB_POWER_CFG); //0x01 battery 
 }
 #endif
 
@@ -1927,7 +1805,7 @@ static void EpdBattery(uint8 temp_b){
   //percentage
   uint8 row = temp_b *120;
   char perc_string[] = {' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_b] & 0x01){
+  if (old_bindClusterDev[temp_b] & CB_POWER_CFG){
     if (temp_Battery_PercentageRemainig[temp_b] != 0xFF) {
       perc_string[0] = temp_Battery_PercentageRemainig[temp_b]/2 / 100 % 10 + '0';
       perc_string[1] = temp_Battery_PercentageRemainig[temp_b]/2 / 10 % 10 + '0';
@@ -1936,19 +1814,19 @@ static void EpdBattery(uint8 temp_b){
     }
   }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(48);
     PaintSetHeight(18);
     PaintSetRotate(ROTATE_0);
     PaintClear(UNCOLORED);
     PaintDrawStringAt(0, 2, perc_string, &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 144, 128 + row, PaintGetWidth(), PaintGetHeight());
-    if (old_bindClusterDev[temp_b] & 0x01){
+    if (old_bindClusterDev[temp_b] & CB_POWER_CFG){
       if (temp_Battery_PercentageRemainig[temp_b] != 0xFF) {
         PaintSetWidth(24);
         PaintSetHeight(16);
         PaintSetRotate(ROTATE_270);
-        PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & 0x01));
+        PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT));
         PaintClear(UNCOLORED);
         if(temp_Battery_PercentageRemainig[temp_b]/2 > 75){
           PaintDrawImage(IMAGE_BATTERY_100, 0, 0, 16, 24, COLORED);
@@ -1962,7 +1840,7 @@ static void EpdBattery(uint8 temp_b){
           PaintDrawImage(IMAGE_BATTERY_0, 0, 0, 16, 24, COLORED);
         }
         EpdSetFrameMemoryXY(PaintGetImage(), 112, 128 + row, PaintGetWidth(), PaintGetHeight());
-        PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01); 
+        PaintSetInvert(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT); 
       }
     } else {
       PaintDrawStringAt(0, 2, " ", &Font16, COLORED);
@@ -1977,15 +1855,15 @@ static void EpdBattery(uint8 temp_b){
     EpdSetFrameMemoryXY(PaintGetImage(), 256, 144, PaintGetWidth(), PaintGetHeight());
     if (zclBattery_PercentageRemainig != 0xFF) {   
       if(zclBattery_PercentageRemainig/2 > 75){
-        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_100, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_100, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (zclBattery_PercentageRemainig/2 <= 75 && zclBattery_PercentageRemainig/2 > 50) {
-        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_75, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_75, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (zclBattery_PercentageRemainig/2 <= 50 && zclBattery_PercentageRemainig/2 > 25) {
-        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_50, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_50, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (zclBattery_PercentageRemainig/2 <= 25 && zclBattery_PercentageRemainig/2 > 6) {
-        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_25, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_25, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else if (zclBattery_PercentageRemainig/2 <= 6 && zclBattery_PercentageRemainig/2 > 0) {
-        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_0, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_BATTERY_0, 256, 116, 16, 25, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       }
     }
   }
@@ -1997,22 +1875,7 @@ static void EpdBattery(uint8 temp_b){
 #if defined(TFT3IN5)
 static void TftOccupancy(uint8 temp_oc){
   // Occupancy
-  uint8 row = temp_oc *120;
-  
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait 
-    if (old_bindClusterDev[temp_oc] & 0x20){     
-      GUI_DrawRectangle(0, 160 + row, 0+64, 160 + row + 64, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-      if (temp_Occupied[temp_oc] == 0) {
-        GUI_Disbitmap(0, 160 + row , IMAGE_MOTION_NOT, 64, 64, BLUE, 0);     
-      } else {
-        GUI_Disbitmap(0, 160 + row , IMAGE_MOTION, 64, 64, BLUE, 0);  
-      }
-    } else {
-      GUI_DrawRectangle(0, 160 + row, 0+64, 160 + row + 64, LCD_BACKGROUND, DRAW_FULL , DOT_PIXEL_DFT );
-    }
-  } else { // landscape
-
-  }
+  TftWidgetMeasuredValue(temp_oc, CB_OCCUPANCY); //0x20 occupancy 
 }
 #endif
 
@@ -2031,12 +1894,12 @@ static void EpdOccupancy(uint8 temp_oc){
   }
   uint8 row = temp_oc *120;
   
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait 
-    if (old_bindClusterDev[temp_oc] & 0x20){
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait 
+    if (old_bindClusterDev[temp_oc] & CB_OCCUPANCY){
       PaintSetWidth(64);
       PaintSetHeight(64);
       PaintSetRotate(ROTATE_270);
-      PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & 0x01));
+      PaintSetInvert(!(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT));
       PaintClear(UNCOLORED);    
       if (temp_Occupied[temp_oc] == 0) {
         PaintDrawImage(IMAGE_MOTION_NOT, 0, 0, 64, 64, COLORED);
@@ -2045,7 +1908,7 @@ static void EpdOccupancy(uint8 temp_oc){
         PaintDrawImage(IMAGE_MOTION, 0, 0, 64, 64, COLORED);
         EpdSetFrameMemoryXY(PaintGetImage(), 0, 160 + row, PaintGetWidth(), PaintGetHeight()); 
       }
-      PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
+      PaintSetInvert(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     } else {
       PaintSetWidth(64);
       PaintSetHeight(64);
@@ -2062,9 +1925,9 @@ static void EpdOccupancy(uint8 temp_oc){
     PaintDrawStringAt(0, 0, occup_string, &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 128, 46, PaintGetWidth(), PaintGetHeight()); 
     if (zclApp_Occupied == 0) {
-      EpdSetFrameMemoryImageXY(IMAGE_MOTION_NOT, 144, 74, 64, 64, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_MOTION_NOT, 144, 74, 64, 64, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     } else {
-      EpdSetFrameMemoryImageXY(IMAGE_MOTION,     144, 74, 64, 64, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_MOTION,     144, 74, 64, 64, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   }
 //  EpdDisplayFramePartial();
@@ -2075,11 +1938,7 @@ static void EpdOccupancy(uint8 temp_oc){
 #if defined(TFT3IN5)
 static void TftIlluminance(uint8 temp_i){
   //Illuminance
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    TftWidgetMeasuredValue(temp_i, 0x02); //0x02 temperature   
-  } else { //landscape
-
-  }
+  TftWidgetMeasuredValue(temp_i, CB_ILLUMINANCE); //0x02 illuminance
 }
 #endif
 
@@ -2090,7 +1949,7 @@ static void EpdIlluminance(uint8 temp_i){
   //Illuminance
   uint8 row = temp_i *120;
   char illum_string[] = {' ',' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_i] & 0x02){
+  if (old_bindClusterDev[temp_i] & CB_ILLUMINANCE){
     illum_string[0] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] / 10000 % 10 + '0';
     illum_string[1] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] / 1000 % 10 + '0';
     illum_string[2] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] / 100 % 10 + '0';
@@ -2098,7 +1957,7 @@ static void EpdIlluminance(uint8 temp_i){
     illum_string[4] = temp_bh1750IlluminanceSensor_MeasuredValue[temp_i] % 10 + '0';
   }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(80);
     PaintSetHeight(32);
     PaintSetRotate(ROTATE_0);
@@ -2109,21 +1968,21 @@ static void EpdIlluminance(uint8 temp_i){
     PaintSetHeight(16);
     PaintSetRotate(ROTATE_0);
     PaintClear(UNCOLORED);
-    if (old_bindClusterDev[temp_i] & 0x02){
+    if (old_bindClusterDev[temp_i] & CB_ILLUMINANCE){
       PaintDrawStringAt(0, 0, "Lux", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 184, 176 + row, PaintGetWidth(), PaintGetHeight());
-      if (zclApp_EpdUpDown[temp_i] & 0x02){
-        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 168, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      if (zclApp_UpDown[temp_i] & CB_ILLUMINANCE){
+        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 168, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else {
-        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 168, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 168, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       }
     } else {
       PaintDrawStringAt(0, 0, "   ", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 184, 176 + row, PaintGetWidth(), PaintGetHeight());
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }   
   } else { //landscape
     PaintSetWidth(32);
@@ -2141,13 +2000,13 @@ static void EpdIlluminance(uint8 temp_i){
     PaintClear(UNCOLORED);
     PaintDrawStringAt(0, 0, "Illuminance", &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 184, 300, PaintGetWidth(), PaintGetHeight());
-    EpdSetFrameMemoryImageXY(IMAGE_ILLUMINANCE, 184, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & 0x01);
-    if (zclApp_EpdUpDown[temp_i] & 0x02){
-      EpdSetFrameMemoryImageXY(IMAGE_UP, 216, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 184, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+    EpdSetFrameMemoryImageXY(IMAGE_ILLUMINANCE, 184, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+    if (zclApp_UpDown[temp_i] & CB_ILLUMINANCE){
+      EpdSetFrameMemoryImageXY(IMAGE_UP, 216, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 184, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     } else {
-      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 184, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 216, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 184, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 216, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   }
 //  EpdDisplayFramePartial();
@@ -2158,63 +2017,227 @@ static void EpdIlluminance(uint8 temp_i){
 
 #if defined(TFT3IN5)
 // enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
-static void TftWidgetMeasuredValue(uint8 dev_num, uint8 cluster_bit){
-  uint16 row = dev_num *120;
+// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
+//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
+static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit){
+  uint16 row = 0;
+  uint16 col = 0;
+  if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ // landscape
+    row = dev_num *120;
+    col = 0;
+  } else { // portrait
+    row = 0;
+    col = dev_num *106;
+  }
   uint16 x;
   uint16 y;
+  uint16 w = 100; // widget width
+  uint16 h = 48; // widget height
+  uint8 wb = 4; // width between widgets
+  uint8 hb = 4; // height between widgets
+  uint8 wi = 48; // image width
+  uint8 hi = 48; // image height
   char* string_uint = "";
+  const unsigned char* image_uint = "";
   uint16 value;
   uint8 scale;
-  if (cluster_bit & 0x02){ // 0x02 illuminance
-    x = 168;
-    y = 144 + row;
+  uint16 background = zclApp_lcd_background;
+  uint16 foreground = BLUE;
+  uint16 textcolor = zclApp_lcd_background;
+  if (cluster_bit == CB_LQI){ // 0x00 LQI
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 - (w/2) - wb - w;
+      y = 136 + row;
+    } else {// portrait
+      x = 4 + col;
+      y = 136 + ((48 + hb) * 0);
+    }
+    w = 48;
+    h = 48;
+    wi = 25;
+    hi = 16;
+    string_uint = "";
+    value = temp_lqi[dev_num];
+    scale = 0;
+    foreground = color_scheme[scheme][0];
+    textcolor = color_scheme[scheme][4];
+//    textcolor = color_scheme[scheme][2];
+        if(value > 40){
+          image_uint = IMAGE_LQI_100;          
+        } else if (value <= 40 && value > 30) {
+          image_uint = IMAGE_LQI_80;
+        } else if (value <= 30 && value > 20) {
+          image_uint = IMAGE_LQI_60;
+        } else if (value <= 20 && value > 10) {
+          image_uint = IMAGE_LQI_40;
+        } else if (value <= 10 && value > 0) {
+          image_uint = IMAGE_LQI_20;
+        } else if (value == 0) {
+          image_uint = IMAGE_LQI_0;
+        } 
+  }
+  if (cluster_bit == CB_POWER_CFG){ // 0x01 battery
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 - (w/2) - wb - w;
+      y = 188 + row;
+    } else {// portrait
+      x = 4 + col + 48 + wb;
+      y = 136 + ((48 + hb) * 0);      
+    }
+    w = 48;
+    h = 48;
+    wi = 25;
+    hi = 16;
+    value = temp_Battery_PercentageRemainig[dev_num]/2;
+    string_uint = "";    
+    scale = 0;
+    foreground = color_scheme[scheme][0];
+    textcolor = color_scheme[scheme][4];
+//    textcolor = color_scheme[scheme][2];    
+    if(value > 75){
+      image_uint = IMAGE_BATTERY_100;
+    } else if (value <= 75 && value > 50) {
+      image_uint = IMAGE_BATTERY_75;
+    } else if (value <= 50 && value > 25) {
+      image_uint = IMAGE_BATTERY_50;
+    } else if (value <= 25 && value > 6) {
+      image_uint = IMAGE_BATTERY_25;
+    } else if (value <= 6 && value > 0) {
+      image_uint = IMAGE_BATTERY_0;
+    }
+  }
+  if (cluster_bit == CB_OCCUPANCY){ // 0x20 occupancy
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 - (w/2) - wb - (w/2) + (wb/2);
+      y = 136 + row;
+    } else {// portrait
+      x = 4 + col;
+      y = 136 + ((48 + hb) * 1);
+    }
+    w = 48;
+    h = 48;
+    string_uint = "Motion";
+    value = temp_Occupied[dev_num];
+    scale = 0;
+    foreground = color_scheme[scheme][1];
+    textcolor = color_scheme[scheme][4];
+    if (value == 0) {
+      image_uint = IMAGE_MOTION_NOT;     
+    } else {
+      image_uint = IMAGE_MOTION;  
+    }
+  }
+  if (cluster_bit == CB_BINARY_INPUT){ // 0x40 binary
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 - (w/2) - wb - (w/2) + (wb/2);
+      y = 136 + row + hb + h;
+    } else {                    // portrait
+      x = 4 + col + 48 + wb;
+      y = 136 + ((48 + hb) * 1);
+    }
+    w = 48;
+    h = 48;
+    string_uint = "Magnet";
+    value = temp_Binary[dev_num];
+    scale = 0;
+    foreground = color_scheme[scheme][1];
+    textcolor = color_scheme[scheme][4];
+    if (value == 1) {
+      image_uint = IMAGE_DOOR_CLOSE;     
+    } else {
+      image_uint = IMAGE_DOOR_OPEN;  
+    }
+  }
+  if (cluster_bit == CB_ILLUMINANCE){ // 0x02 illuminance
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 + (w/2) + wb;
+      y = 136 + row;
+    } else {// portrait
+      x = 4 + col;
+      y = 136 + ((48 + hb) * 5);
+    }
     string_uint = "Lux";
     value = temp_bh1750IlluminanceSensor_MeasuredValue[dev_num];
     scale = 0;
+//    foreground = MAGENTA;
+    foreground = color_scheme[scheme][6];
+    textcolor = color_scheme[scheme][7];
   }
-  if (cluster_bit & 0x04) { // 0x04 temperature
-    x = 64;
-    y = 144 + row;
+  if (cluster_bit == CB_TEMP) { // 0x04 temperature
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 - (w/2);
+      y = 136 + row;
+    } else {// portrait
+      x = 4 + col;
+      y = 136 + ((48 + hb) * 2);
+    }
     string_uint = "^C";
     value = temp_Temperature_Sensor_MeasuredValue[dev_num];
     scale = 2;
+    foreground = color_scheme[scheme][3];
+    textcolor = color_scheme[scheme][2];
   }
-  if (cluster_bit & 0x08){ // 0x08 pressure
-    x = 168;
-    y = 192 + row;
+  if (cluster_bit == CB_PRESSURE){ // 0x08 pressure
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 + (w/2) + wb;
+      y = 188 + row;
+    } else {// portrait
+      x = 4 + col;
+      y = 136 + ((48 + hb) * 4);
+    }
     string_uint = "hPa";
     value = temp_PressureSensor_MeasuredValue[dev_num];
     scale = 0;
+    foreground = color_scheme[scheme][5];
+    textcolor = color_scheme[scheme][4];
   }
-  if (cluster_bit & 0x10){ // 0x10 humidity
-    x = 64;
-    y = 192 + row;
+  if (cluster_bit == CB_HUMIDITY){ // 0x10 humidity
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 - (w/2);
+      y = 188 + row;
+    } else {// portrait
+      x = 4 + col;
+      y = 136 + ((48 + hb) * 3);
+    }
     string_uint = "%Ha";
     value = temp_HumiditySensor_MeasuredValue[dev_num];
-    scale = 2;    
+    scale = 2; 
+    foreground = color_scheme[scheme][4];
+    textcolor = color_scheme[scheme][2];
   }
-  LCD_SetArealColorWH(x, y, 96, 48, LCD_BACKGROUND);
-  if (old_bindClusterDev[dev_num] & cluster_bit){            
-      GUI_DisNumDP(x+16, y, value, scale, &Font32, LCD_BACKGROUND, BLUE );
-      GUI_DisString_EN(x+16, y+32, string_uint, &Font16, LCD_BACKGROUND, BLUE);      
-      if (zclApp_EpdUpDown[dev_num] & cluster_bit){
-        GUI_Disbitmap(x, y, IMAGE_LEFT, 16, 16, BLUE, 1);
+  
+  LCD_SetArealColorWH(x-1, y-1, w+2, h+2, background);
+  
+      if (zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT) {        
+        uint16 tfore = foreground;
+        foreground = textcolor;
+        textcolor = tfore;
+      } else {  
+        
+      }
+  
+  if ((old_bindClusterDev[dev_num] & cluster_bit) || (cluster_bit == CB_LQI && temp_lqi[dev_num] != 255 && temp_Sender_shortAddr[dev_num] != 0xFFFE) ){    
+      GUI_DrawRoundRectangle(8, x, y, x+w, y+h, foreground, DRAW_FULL , DOT_PIXEL_DFT );      
+      if (image_uint != "") {
+        GUI_Disbitmap((x+w/2) - (wi/2), (y+h/2) - (hi/2), image_uint, wi, hi, textcolor, 0);
+        if (string_uint == "") {
+          GUI_DisNumDP(x+8, y+32, value, scale, &Font16, foreground, textcolor );
+        }
       } else {
-        GUI_Disbitmap(x, y+16 , IMAGE_RIGHT, 16, 16, BLUE, 1);
+        GUI_DisNumDP(x+16, y+2, value, scale, &Font32, foreground, textcolor );
+        GUI_DisString_EN(x+16, y+32, string_uint, &Font16, foreground, textcolor);
+        if (zclApp_UpDown[dev_num] & cluster_bit){
+          GUI_Disbitmap(x, y+6, IMAGE_LEFT, 16, 16, textcolor, 1);
+        } else {
+          GUI_Disbitmap(x, y+16+6 , IMAGE_RIGHT, 16, 16, textcolor, 1);
+        }         
       }
   }
   
 }
 
 static void TftTemperature(uint8 temp_t){
-  //temperature
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    TftWidgetMeasuredValue(temp_t, 0x04); //0x04 temperature
-  } else { //landscape
-
-  }
+  TftWidgetMeasuredValue(temp_t, CB_TEMP); //0x04 temperature
 }
 #endif
 
@@ -2225,7 +2248,7 @@ static void EpdTemperature(uint8 temp_t){
   //temperature
   uint8 row = temp_t *120;
   char temp_string[] = {' ', ' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_t] & 0x04){
+  if (old_bindClusterDev[temp_t] & CB_TEMP){
     temp_string[0] = temp_Temperature_Sensor_MeasuredValue[temp_t] / 1000 % 10 + '0';
     temp_string[1] = temp_Temperature_Sensor_MeasuredValue[temp_t] / 100 % 10 + '0';
     temp_string[2] = '.';
@@ -2233,7 +2256,7 @@ static void EpdTemperature(uint8 temp_t){
     temp_string[4] = temp_Temperature_Sensor_MeasuredValue[temp_t] % 10 + '0';
   }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(80);
     PaintSetHeight(32);
     PaintSetRotate(ROTATE_0);
@@ -2244,21 +2267,21 @@ static void EpdTemperature(uint8 temp_t){
     PaintSetHeight(16);
     PaintSetRotate(ROTATE_0);
     PaintClear(UNCOLORED);
-    if (old_bindClusterDev[temp_t] & 0x04){
+    if (old_bindClusterDev[temp_t] & CB_TEMP){
       PaintDrawStringAt(0, 0, "^C", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 80, 176 + row, PaintGetWidth(), PaintGetHeight());
-      if (zclApp_EpdUpDown[temp_t] & 0x04){
-        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 64, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      if (zclApp_UpDown[temp_t] & CB_TEMP){
+        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 64, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else {
-        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 64, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 64, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       }
     } else {
       PaintDrawStringAt(0, 0, "  ", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 80, 176 + row, PaintGetWidth(), PaintGetHeight());
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 160 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 144 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   } else { //landscape
     PaintSetWidth(32);
@@ -2276,13 +2299,13 @@ static void EpdTemperature(uint8 temp_t){
     PaintClear(UNCOLORED);
     PaintDrawStringAt(0, 0, "Temperature", &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 128, 300, PaintGetWidth(), PaintGetHeight());
-    EpdSetFrameMemoryImageXY(IMAGE_TEMPERATURE, 128, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & 0x01);
-    if (zclApp_EpdUpDown[temp_t] & 0x04){
-      EpdSetFrameMemoryImageXY(IMAGE_UP, 160, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 128, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+    EpdSetFrameMemoryImageXY(IMAGE_TEMPERATURE, 128, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+    if (zclApp_UpDown[temp_t] & CB_TEMP){
+      EpdSetFrameMemoryImageXY(IMAGE_UP, 160, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 128, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     } else {
-      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 128, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 160, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 128, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 160, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   }
 //  EpdDisplayFramePartial();
@@ -2293,11 +2316,7 @@ static void EpdTemperature(uint8 temp_t){
 #if defined(TFT3IN5)
 static void TftHumidity(uint8 temp_h){
   //humidity
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-    TftWidgetMeasuredValue(temp_h, 0x10); //0x10 humidity
-  } else { // landscape
-
-  }
+  TftWidgetMeasuredValue(temp_h, CB_HUMIDITY); //0x10 humidity
 }
 #endif
 
@@ -2308,7 +2327,7 @@ static void EpdHumidity(uint8 temp_h){
   //humidity
   uint8 row = temp_h * 120;
   char hum_string[] = {' ', ' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_h] & 0x10){
+  if (old_bindClusterDev[temp_h] & CB_HUMIDITY){
     hum_string[0] = temp_HumiditySensor_MeasuredValue[temp_h] / 1000 % 10 + '0';
     hum_string[1] = temp_HumiditySensor_MeasuredValue[temp_h] / 100 % 10 + '0';
     hum_string[2] = '.';
@@ -2316,7 +2335,7 @@ static void EpdHumidity(uint8 temp_h){
     hum_string[4] = temp_HumiditySensor_MeasuredValue[temp_h] % 10 + '0';
   }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(80);
     PaintSetHeight(32);
     PaintSetRotate(ROTATE_0);
@@ -2327,21 +2346,21 @@ static void EpdHumidity(uint8 temp_h){
     PaintSetHeight(16);
     PaintSetRotate(ROTATE_0);
     PaintClear(UNCOLORED);
-    if (old_bindClusterDev[temp_h] & 0x10){
+    if (old_bindClusterDev[temp_h] & CB_HUMIDITY){
       PaintDrawStringAt(0, 0, "%Ha", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 80, 224 + row, PaintGetWidth(), PaintGetHeight());
-      if (zclApp_EpdUpDown[temp_h] & 0x10){
-        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 64, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      if (zclApp_UpDown[temp_h] & CB_HUMIDITY){
+        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 64, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else {
-        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 64, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 64, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } 
     } else {
       PaintDrawStringAt(0, 0, "   ", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 80, 224 + row, PaintGetWidth(), PaintGetHeight());
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 64, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   } else { // landscape
     PaintSetWidth(32);
@@ -2359,13 +2378,13 @@ static void EpdHumidity(uint8 temp_h){
     PaintClear(UNCOLORED);
     PaintDrawStringAt(0, 0, "Humidity", &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 72, 300, PaintGetWidth(), PaintGetHeight());
-    EpdSetFrameMemoryImageXY(IMAGE_HUMIDITY, 72, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & 0x01);
-    if (zclApp_EpdUpDown[temp_h] & 0x10){
-      EpdSetFrameMemoryImageXY(IMAGE_UP, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+    EpdSetFrameMemoryImageXY(IMAGE_HUMIDITY, 72, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+    if (zclApp_UpDown[temp_h] & CB_HUMIDITY){
+      EpdSetFrameMemoryImageXY(IMAGE_UP, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     } else {
-      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 72, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 104, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   }
 //  EpdDisplayFramePartial();
@@ -2376,11 +2395,14 @@ static void EpdHumidity(uint8 temp_h){
 #if defined(TFT3IN5)
 static void TftPressure(uint8 temp_p){
   //pressure
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
-   TftWidgetMeasuredValue(temp_p, 0x08); //0x08 pressure  
-  } else { //landscape
+  TftWidgetMeasuredValue(temp_p, CB_PRESSURE); //0x08 pressure 
+}
+#endif
 
-  }
+#if defined(TFT3IN5)
+static void TftBinary(uint8 temp_b){
+  //binary
+  TftWidgetMeasuredValue(temp_b, CB_BINARY_INPUT); //0x40 binary 
 }
 #endif
 
@@ -2391,7 +2413,7 @@ static void EpdPressure(uint8 temp_p){
   //pressure
   uint8 row = temp_p*120;
   char pres_string[] = {' ', ' ', ' ', ' ', ' ', ' ', '\0'};
-  if (old_bindClusterDev[temp_p] & 0x08){
+  if (old_bindClusterDev[temp_p] & CB_PRESSURE){
     pres_string[0] = temp_PressureSensor_MeasuredValue[temp_p] / 1000 % 10 + '0';
     pres_string[1] = temp_PressureSensor_MeasuredValue[temp_p] / 100 % 10 + '0';
     pres_string[2] = temp_PressureSensor_MeasuredValue[temp_p] / 10 % 10 + '0';
@@ -2400,7 +2422,7 @@ static void EpdPressure(uint8 temp_p){
     pres_string[5] = temp_PressureSensor_ScaledValue[temp_p] % 10 + '0';
   }
 
-  if (zclApp_Config.HvacUiDisplayMode & 0x02){ // portrait
+  if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE){ // portrait
     PaintSetWidth(96);
     PaintSetHeight(32);
     PaintSetRotate(ROTATE_0);
@@ -2411,21 +2433,21 @@ static void EpdPressure(uint8 temp_p){
     PaintSetHeight(16);
     PaintSetRotate(ROTATE_0);
     PaintClear(UNCOLORED);
-    if (old_bindClusterDev[temp_p] & 0x08){
+    if (old_bindClusterDev[temp_p] & CB_PRESSURE){
       PaintDrawStringAt(0, 0, "hPa", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 184, 224 + row, PaintGetWidth(), PaintGetHeight());
-      if (zclApp_EpdUpDown[temp_p] & 0x08){
-        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 168, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      if (zclApp_UpDown[temp_p] & CB_PRESSURE){
+        EpdSetFrameMemoryImageXY(IMAGE_LEFT, 168, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } else {
-        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 168, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+        EpdSetFrameMemoryImageXY(IMAGE_RIGHT, 168, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+        EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
       } 
     } else {
       PaintDrawStringAt(0, 0, "   ", &Font16, COLORED);
       EpdSetFrameMemoryXY(PaintGetImage(), 184, 224 + row, PaintGetWidth(), PaintGetHeight());
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 208 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR16, 168, 192 + row, 16, 16, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   } else { //landscape
     PaintSetWidth(32);
@@ -2443,13 +2465,13 @@ static void EpdPressure(uint8 temp_p){
     PaintClear(UNCOLORED);
     PaintDrawStringAt(0, 0, "Pressure", &Font16, COLORED);
     EpdSetFrameMemoryXY(PaintGetImage(), 16, 300, PaintGetWidth(), PaintGetHeight());
-    EpdSetFrameMemoryImageXY(IMAGE_PRESSURE, 16, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & 0x01);
-    if (zclApp_EpdUpDown[temp_p] & 0x08){
-      EpdSetFrameMemoryImageXY(IMAGE_UP, 48, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 16, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+    EpdSetFrameMemoryImageXY(IMAGE_PRESSURE, 16, 240, 48, 48, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+    if (zclApp_UpDown[temp_p] & CB_PRESSURE){
+      EpdSetFrameMemoryImageXY(IMAGE_UP, 48, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 16, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     } else {
-      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 16, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
-      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 48, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & 0x01);
+      EpdSetFrameMemoryImageXY(IMAGE_DOWN, 16, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
+      EpdSetFrameMemoryImageXY(IMAGE_CLEAR, 48, 284, 16, 12, zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
     }
   }
 //  EpdDisplayFramePartial();
@@ -2461,8 +2483,8 @@ static void EpdPressure(uint8 temp_p){
 static void TfttestRefresh(uint8 i)
 {       
 // enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
+// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
+//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
   
 //  for(uint8 i = 0; i <= 2; i++ ){ 
       LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);
@@ -2472,6 +2494,7 @@ static void TfttestRefresh(uint8 i)
       TftBattery(i);     // percentage battery
       TftNwk(i);         // nwk
       TftOccupancy(i);   // occupancy
+      TftBinary(i);      // binary
       TftIlluminance(i); // illuminance
       TftTemperature(i); // temperature
       TftHumidity(i);    // humidity
@@ -2479,20 +2502,43 @@ static void TfttestRefresh(uint8 i)
 //  }
 
 }
+
+void TftUpdateRefresh(void) { 
+            if (!zcl_game) {
+              if (zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT){
+//                zclApp_lcd_background = WHITE;
+                zclApp_lcd_background = color_scheme[scheme][3];
+              } else {
+//                zclApp_lcd_background = BLACK;
+                zclApp_lcd_background = color_scheme[scheme][2];
+              }
+              GUI_Clear(zclApp_lcd_background);
+//              TftStatus(0);
+//              TftTimeDateWeek();
+              zclApp_menu = 0;
+              zclApp_create_butt_main(zclApp_menu);
+//              zclApp_create_butt();
+              for (uint8 i = 0; i <= 2; i++) {
+                if (temp_Sender_shortAddr[i] != 0xFFFE){
+                  TfttestRefresh(i);
+                }
+              }
+            }
+}
 #endif
 
 #if defined(EPD3IN7)
 static void EpdtestRefresh(void)
 {   
   EpdReset(); //disable sleep EPD
-  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & 0x01);
+  PaintSetInvert(zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT);
   
   EpdTimeDateWeek(); // time, date, weekday
   EpdStatus(0); // status network device
   
 // enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
+// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
+//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
   for(uint8 i = 0; i <= 2; i++ ){ 
     LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);
     zclApp_EpdSensors(i);
@@ -2597,124 +2643,117 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
   zclReportCmd_t *pInAttrReport;
   pInAttrReport = (zclReportCmd_t *)pInMsg->attrCmd; 
 // enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP, 3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - none       , 7 - table received
+// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
+//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
   for (uint8 n = 0; n < (pInAttrReport->numAttr); n++ ){
     if (pInMsg->clusterId == TEMP && pInAttrReport->attrList[n].attrID == ATTRID_MS_TEMPERATURE_MEASURED_VALUE){
       if (temp_Temperature_Sensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
-        zclApp_EpdUpDown[i] &= ~BV(2); // down
+        zclApp_UpDown[i] &= ~CB_TEMP; // down
       } else {
-        zclApp_EpdUpDown[i] |=  BV(2); // up
+        zclApp_UpDown[i] |=  CB_TEMP; // up
       }
       temp_Temperature_Sensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
-      temp_bindClusterDev[i] |= BV(2);
-      old_bindClusterDev[i] |= BV(2);
+      temp_bindClusterDev[i] |= CB_TEMP;
+      old_bindClusterDev[i]  |= CB_TEMP;
 #if defined(TFT3IN5)
       if (!zcl_game){      
         TftTemperature(i);
       }
-#endif // TFT3IN5
-#if defined(EPD3IN7)      
-//      EpdTemperature(i);
-//      EpdTemperature(i);
-#endif // EPD3IN7        
+#endif // TFT3IN5       
     }
     if (pInMsg->clusterId == HUMIDITY && pInAttrReport->attrList[n].attrID == ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE){
       if (temp_HumiditySensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
-        zclApp_EpdUpDown[i] &= ~BV(4); // down
+        zclApp_UpDown[i] &= ~CB_HUMIDITY; // down
       } else {
-        zclApp_EpdUpDown[i] |=  BV(4); // up
+        zclApp_UpDown[i] |=  CB_HUMIDITY; // up
       }
       temp_HumiditySensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
-      temp_bindClusterDev[i] |= BV(4);
-      old_bindClusterDev[i] |= BV(4);
+      temp_bindClusterDev[i] |= CB_HUMIDITY;
+      old_bindClusterDev[i]  |= CB_HUMIDITY;
 #if defined(TFT3IN5) 
       if (!zcl_game){      
         TftHumidity(i);
       }
 #endif // TFT3IN5  
-#if defined(EPD3IN7)       
-//      EpdHumidity(i);
-//      EpdHumidity(i);
-#endif // EPD3IN7 
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE){
       if (temp_PressureSensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
-        zclApp_EpdUpDown[i] &= ~BV(3); // down
+        zclApp_UpDown[i] &= ~CB_PRESSURE; // down
       } else {
-        zclApp_EpdUpDown[i] |=  BV(3); // up
+        zclApp_UpDown[i] |=  CB_PRESSURE; // up
       }
       temp_PressureSensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
-      temp_bindClusterDev[i] |= BV(3);
-      old_bindClusterDev[i] |= BV(3);
+      temp_bindClusterDev[i] |= CB_PRESSURE;
+      old_bindClusterDev[i]  |= CB_PRESSURE;
 #if defined(TFT3IN5)
       if (!zcl_game){      
         TftPressure(i);
       }
-#endif // TFT3IN5      
-#if defined(EPD3IN7)      
-//      EpdPressure(i);
-//      EpdPressure(i);
-#endif // EPD3IN7   
+#endif // TFT3IN5        
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_SCALE){
       temp_PressureSensor_ScaledValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
-      temp_bindClusterDev[i] |= BV(3);
-      old_bindClusterDev[i] |= BV(3);
+//      temp_bindClusterDev[i] |= CB_PRESSURE;
+//      old_bindClusterDev[i]  |= CB_PRESSURE;
     }
     if (pInMsg->clusterId == ILLUMINANCE && pInAttrReport->attrList[n].attrID == ATTRID_MS_ILLUMINANCE_MEASURED_VALUE){
       if (temp_bh1750IlluminanceSensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
-        zclApp_EpdUpDown[i] &= ~BV(1); // down
+        zclApp_UpDown[i] &= ~CB_ILLUMINANCE; // down
       } else {
-        zclApp_EpdUpDown[i] |=  BV(1); // up
+        zclApp_UpDown[i] |=  CB_ILLUMINANCE; // up
       }
       temp_bh1750IlluminanceSensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
-      temp_bindClusterDev[i] |= BV(1);
-      old_bindClusterDev[i] |= BV(1);
+      temp_bindClusterDev[i] |= CB_ILLUMINANCE;
+      old_bindClusterDev[i]  |= CB_ILLUMINANCE;
 #if defined(TFT3IN5) 
       if (!zcl_game){
         TftIlluminance(i);
       }
 #endif // TFT3IN5    
-#if defined(EPD3IN7)      
-//      EpdIlluminance(i);
-//      EpdIlluminance(i);
-#endif // EPD3IN7 
     }
     if (pInMsg->clusterId == POWER_CFG && pInAttrReport->attrList[n].attrID == ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING){
       temp_Battery_PercentageRemainig[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
-      temp_bindClusterDev[i] |= BV(0);
-      old_bindClusterDev[i] |= BV(0); 
+      temp_bindClusterDev[i] |= CB_POWER_CFG;
+      old_bindClusterDev[i]  |= CB_POWER_CFG; 
 #if defined(TFT3IN5) 
       if (!zcl_game){
         TftBattery(i);
       }
-#endif // TFT3IN5       
-#if defined(EPD3IN7)      
-//      EpdBattery(i);
-//      EpdBattery(i);
-#endif // EPD3IN7  
+#endif // TFT3IN5        
     }
     if (pInMsg->clusterId == OCCUPANCY && pInAttrReport->attrList[n].attrID == ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY){
+      if (temp_Occupied[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
+        zclApp_UpDown[i] &= ~CB_OCCUPANCY; // down
+      } else {
+        zclApp_UpDown[i] |=  CB_OCCUPANCY; // up
+      }
       temp_Occupied[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
-      temp_bindClusterDev[i] |= BV(5);
-      old_bindClusterDev[i] |= BV(5);
+      temp_bindClusterDev[i] |= CB_OCCUPANCY;
+      old_bindClusterDev[i]  |= CB_OCCUPANCY;
 #if defined(TFT3IN5)
       if (!zcl_game){      
         TftOccupancy(i);
       }
-#endif // TFT3IN5 
-#if defined(EPD3IN7)      
-//      EpdOccupancy(i);
-//      EpdOccupancy(i);
-#endif // EPD3IN7        
+#endif // TFT3IN5         
+    }
+    if (pInMsg->clusterId == BINARY_INPUT && pInAttrReport->attrList[n].attrID == ATTRID_GEN_BINARY_INPUT_PRESENTVALUE){
+      if (temp_Binary[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
+        zclApp_UpDown[i] &= ~CB_BINARY_INPUT; // down
+      } else {
+        zclApp_UpDown[i] |=  CB_BINARY_INPUT; // up
+      }
+      temp_Binary[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
+      temp_bindClusterDev[i] |= CB_BINARY_INPUT;
+      old_bindClusterDev[i]  |= CB_BINARY_INPUT;
+#if defined(TFT3IN5)
+      if (!zcl_game){      
+        TftBinary(i);
+      }
+#endif // TFT3IN5       
     }
 #if defined(EPD3IN7) 
     EpdRefresh();
-#endif // EPD3IN7
-#if defined(TFT3IN5)    
-//    TftRefresh();
-#endif // TFT3IN5    
+#endif // EPD3IN7    
   }
 }
 #endif  // ZCL_REPORT_DESTINATION_DEVICE
@@ -2754,6 +2793,9 @@ static void zclApp_ProcessIncomingMsg( zclIncomingMsg_t *pInMsg )
           zclApp_AttrIncomingReport( pInMsg );
           break;
         case ZCL_CLUSTER_ID_MS_OCCUPANCY_SENSING:
+          zclApp_AttrIncomingReport( pInMsg );
+          break;
+        case ZCL_CLUSTER_ID_GEN_BINARY_INPUT_BASIC:
           zclApp_AttrIncomingReport( pInMsg );
           break;
         default:
@@ -2805,6 +2847,481 @@ static void InitLedPWM(uint8 level){
 }
 #endif
 
+#ifdef TFT3IN5
+static char buttonlabels[14][6][6] = { // [menu][butt][number]
+                                       " ", " ", "MENU", " ",  " ", " ",     //0
+                                       "NET", "DISP", "GAME", "BEEP", " ", "EXIT", //1
+                                       "COLOR", "INVER", "ROTAT", " ", "BACKL", "EXIT", //2
+                                       "Red", "Green", "Blue", " ", " ", "EXIT", //3
+                                       " ", "LIGHT", "DARK", " ", " ", "EXIT", //4
+                                       " ", "PORTR", "LANDS", " ", " ", "EXIT", //5
+                                       "ALL", "TEMP", "HUMID", "PRESS", ">>>", "EXIT", //6
+                                       "BATT", "ILLUM", " ", "OCCUP", "MODE", "EXIT", //7
+                                       "REMOV", "REPOR", "TIME", "LQI", "BIND", "EXIT", //8
+                                       "MAX", "AUTO", " ", " ", " ", "EXIT", //9
+                                       "LQI0", "LQI1", "LQI2", " ", " ", "EXIT", //10
+                                       "BND0", "BND1", "BND2", " ", " ", "EXIT", //11
+                                       "JOIN", " ", " ", " ", " ", "EXIT", //12
+                                       "SONG1", "SONG2", "STOP", " ", " ", "EXIT", //13
+}; 
 
+static char zclApp_status_string[20] = "";
+static uint8 zclApp_butt = 0;
+
+static void zclApp_create_butt_main(uint8 block) {
+  LCD_SetArealColor(0, 0, 320, 119, zclApp_lcd_background);
+
+  if (block != 0){
+    GUI_DisString_EN(32, 0, zclApp_status_string, &Font16, zclApp_lcd_background, WHITE);
+    for (uint8 row=0; row<2; row++) {
+      for (uint8 col=0; col<3; col++) {
+          initButton(col + row*3, 4+(100/2)+col*(100+6), 16+(48/2)+row*(48+4),    // i, x, y, w, h, outline, fill, text
+                  100, 48,  WHITE, color_scheme[scheme][4], color_scheme[scheme][2],
+                  buttonlabels[block][col + row*3], 2);
+        if (buttonlabels[block][col + row*3][0] != ' ') {
+          drawButton(col + row*3, 0);
+        }  
+      }
+    }
+  } else {
+    memset(zclApp_status_string,0,20);
+    TftStatus(0);
+    TftTimeDateWeek();
+    initButton(2, 160+2+48+4+48+4+24 , 16+24,    // index, x, y
+               48, 48,  WHITE, color_scheme[scheme][4],  color_scheme[scheme][2], //w, h, outline color, fill color, text color
+               "M", 2); 
+    drawButton(2, 0);
+  }
+}
+
+void zclApp_keyprocessing(void) {
+            int8 butt = pressButton();
+            if (butt != -1 && buttonlabels[zclApp_menu][butt][0] != ' '){
+              beeping_beep_delay(400,20);
+            }
+            zclApp_butt = butt;
+            if ((zclApp_menu !=0 && zclApp_menu !=6 &&zclApp_menu !=7 && buttonlabels[zclApp_menu][butt][0] != ' ') || (zclApp_menu == 0 && butt == 2)){
+              uint8 n = osal_strlen(buttonlabels[zclApp_menu][zclApp_butt]);
+              uint8 m = osal_strlen(zclApp_status_string);
+              for (uint8 i=0; i < n; i++) {
+                zclApp_status_string[m+i] = buttonlabels[zclApp_menu][zclApp_butt][i];
+              }
+              n = osal_strlen(zclApp_status_string);
+              zclApp_status_string[n] = ':';
+              zclApp_status_string[n + 1] = '\0';
+            }
+            if ((zclApp_menu !=0 && buttonlabels[zclApp_menu][butt][0] != ' ') || (zclApp_menu == 0 && butt == 2)){
+              drawButton(butt, 0); // update press
+            }
+            
+            switch (zclApp_menu){
+              case 0: //zclApp_menu=0
+                switch (butt){
+                  case 0:
+                    
+                    break;
+                  case 1:
+                    
+                    break;
+                  case 2:
+                    zclApp_menu = 1;
+                    zclApp_create_butt_main(zclApp_menu);                    
+                    break;
+                }
+                break;
+              case 1://zclApp_menu=1
+                switch (butt){
+                  case 0:
+                    if (bdbAttributes.bdbNodeIsOnANetwork == 1) {
+                      zclApp_menu = 8;
+                      zclApp_create_butt_main(zclApp_menu);
+                    } else {
+                      zclApp_menu = 12;
+                      zclApp_create_butt_main(zclApp_menu);
+                    }
+                    break;
+                  case 1:
+                    zclApp_menu = 2;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;
+                  case 2:
+#if defined(BREAKOUT)                
+                    zcl_game = 1;
+                    xpt2046_mode = 0;
+                    breakout_start();
+#endif                     
+                    break;
+                  case 3:
+                    zclApp_menu = 13;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;
+                  case 4:
+                    
+                    break;
+                }
+                break;
+              case 2://zclApp_menu=2
+               switch (butt){
+                  case 0:
+                    zclApp_menu = 3;
+                    zclApp_create_butt_main(zclApp_menu); //COLOR
+                    break;
+                  case 1:
+                    zclApp_menu = 4;
+                    zclApp_create_butt_main(zclApp_menu); //INVERT
+                    break;
+                  case 2:
+                    zclApp_menu = 5;
+                    zclApp_create_butt_main(zclApp_menu); //ROTATE                   
+                    break;
+                  case 3:
+                    
+                    break;
+                  case 4:
+                    zclApp_menu = 9;
+                    zclApp_create_butt_main(zclApp_menu); //BACKL                   
+                    break;
+                }
+                break;
+              case 3://zclApp_menu=3
+                zclApp_Config.HvacUiDisplayMode &= ~(DM_GREEN | DM_RED | DM_BLUE);//clear color scheme
+                switch (butt){
+                  case 0:
+                    scheme = 1;  // RED
+                    zclApp_Config.HvacUiDisplayMode |= DM_RED;
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                  case 1:
+                    scheme = 2; // GREEN
+                    zclApp_Config.HvacUiDisplayMode |= DM_GREEN;
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                  case 2:
+                    scheme = 0; // BLUE
+                    zclApp_Config.HvacUiDisplayMode |= DM_BLUE;
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                }
+                break;
+              case 4://zclApp_menu=4
+                switch (butt){
+                  case 0:
+
+                    break;
+                  case 1:
+                    zclApp_Config.HvacUiDisplayMode |= DM_INVERT_NOT; //invert
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                  case 2:
+                    zclApp_Config.HvacUiDisplayMode &= ~DM_INVERT_NOT;//invert
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                }
+                break;
+              case 5://zclApp_menu=5
+                switch (butt){
+                  case 0:
+
+                    break;
+                  case 1:
+                    zclApp_Config.HvacUiDisplayMode |= DM_ROTATE; //rotate
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                  case 2:
+                    zclApp_Config.HvacUiDisplayMode &= ~DM_ROTATE; //rotate
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                }
+                break;
+              case 6://zclApp_menu=6
+                switch (butt){
+                  case 0:
+                    report = 1;
+                    zclApp_Report();
+                    break;
+                  case 1:
+                    report = 1;
+                    zclApp_ReadBME280Temperature();
+                    report = 0;
+                    break;
+                  case 2:
+                    report = 1;
+                    zclApp_ReadBME280Humidity();
+                    report = 0;
+                    break;
+                  case 3:
+                    report = 1;
+                    zclApp_ReadBME280Pressure();
+                    report = 0;
+                    break;
+                  case 4:
+                    zclApp_menu = 7;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;                  
+                }
+                break;
+              case 7://zclApp_menu=7
+                switch (butt){
+                  case 0:
+                    report = 1;
+                    zclBattery_Report();
+                    report = 0;
+                    break;
+                  case 1:
+                    report = 1;
+                    osal_stop_timerEx(zclApp_TaskID, APP_BH1750_DELAY_EVT);
+                    osal_clear_event(zclApp_TaskID, APP_BH1750_DELAY_EVT);
+                    zclApp_bh1750StartLumosity();
+                    break;
+                  case 2:
+                    
+                    break;
+                  case 3:
+                    bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
+                    break;
+                  case 4:
+                    zclApp_ConfigDisplay();
+                    break;                  
+                }
+                break;
+              case 8://zclApp_menu=8                
+                    for (uint8 i = 0; i < 3; i++){
+                      if (temp_Sender_shortAddr[i] == 0xFFFE) {
+                        buttonlabels[10][i][0] = ' ';
+                        buttonlabels[11][i][0] = ' ';
+                      } else {                        
+                        buttonlabels[10][i][0] = temp_Sender_shortAddr[i] / 4096 %16 + '0';
+                        buttonlabels[11][i][0] = temp_Sender_shortAddr[i] / 4096 %16 + '0';
+                        if ((temp_Sender_shortAddr[i]/4096 %16) > 9){
+                          buttonlabels[10][i][0] = buttonlabels[10][i][0]+7;
+                          buttonlabels[11][i][0] = buttonlabels[11][i][0]+7;
+                        }  
+                        buttonlabels[10][i][1] = temp_Sender_shortAddr[i] / 256 %16 + '0';
+                        buttonlabels[11][i][1] = temp_Sender_shortAddr[i] / 256 %16 + '0';
+                        if ((temp_Sender_shortAddr[i]/256 %16) > 9){
+                          buttonlabels[10][i][1] = buttonlabels[10][i][1]+7;
+                          buttonlabels[11][i][1] = buttonlabels[11][i][1]+7;
+                        }
+                        buttonlabels[10][i][2] = temp_Sender_shortAddr[i] / 16 %16 + '0';
+                        buttonlabels[11][i][2] = temp_Sender_shortAddr[i] / 16 %16 + '0';
+                        if ((temp_Sender_shortAddr[i]/16 %16) > 9){
+                          buttonlabels[10][i][2] = buttonlabels[10][i][2]+7;
+                          buttonlabels[11][i][2] = buttonlabels[11][i][2]+7;
+                        }
+                        buttonlabels[10][i][3] = temp_Sender_shortAddr[i] %16 + '0';
+                        buttonlabels[11][i][3] = temp_Sender_shortAddr[i] %16 + '0';
+                        if ((temp_Sender_shortAddr[i] %16) > 9){
+                          buttonlabels[10][i][3] = buttonlabels[10][i][3]+7;
+                          buttonlabels[11][i][3] = buttonlabels[11][i][3]+7;
+                        }
+                      }                    
+                    }
+                switch (butt){
+                  case 0:
+                    if (bdbAttributes.bdbNodeIsOnANetwork == 1) {
+                      bdb_resetLocalAction();
+                    }
+                    break;
+                  case 1:
+                    zclApp_menu = 6;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;
+                  case 2:
+                    zclApp_LocalTime();
+                    break;
+                  case 3:
+                    zclApp_menu = 10;
+                    zclApp_create_butt_main(zclApp_menu);                    
+                    break;
+                  case 4:
+                    zclApp_menu = 11;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;                  
+                }
+                break;
+              case 9://zclApp_menu=9
+                switch (butt){
+                  case 0:
+                    InitLedPWM(254 - MAX_LEVEL_PWM);
+                    zclApp_Config.HvacUiDisplayMode |= DM_BACKLIGHT; //backlight
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                  case 1:
+                    zclApp_Config.HvacUiDisplayMode &= ~DM_BACKLIGHT; //backlight
+                    zclApp_ConfigDisplay();
+                    osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 200);
+                    break;
+                  case 2:
+                    
+                    break;
+                  case 3:
+
+                    break;
+                  case 4:
+
+                    break;                  
+                }
+                break;
+              case 10://zclApp_menu=10                
+                switch (butt){                 
+                  case 0:
+                    if ((bdbAttributes.bdbNodeIsOnANetwork == 1) && (temp_Sender_shortAddr[0] != 0xFFFE) ) {
+#ifdef LQI_REQ                      
+                      temp_countReqLqi = 0;
+                      zclApp_RequestLqi();
+                      zclApp_menu = 0;
+                      zclApp_create_butt_main(zclApp_menu);  
+#endif                      
+                    }                      
+                    break;
+                  case 1:
+                    if ((bdbAttributes.bdbNodeIsOnANetwork == 1) && (temp_Sender_shortAddr[1] != 0xFFFE)) {
+#ifdef LQI_REQ                      
+                      temp_countReqLqi = 1;
+                      zclApp_RequestLqi();
+                      zclApp_menu = 0;
+                      zclApp_create_butt_main(zclApp_menu); 
+#endif                      
+                    }  
+                    break;
+                  case 2:
+                    if ((bdbAttributes.bdbNodeIsOnANetwork == 1) && (temp_Sender_shortAddr[2] != 0xFFFE)) {
+#ifdef LQI_REQ                      
+                      temp_countReqLqi = 2;
+                      zclApp_RequestLqi();
+                      zclApp_menu = 0;
+                      zclApp_create_butt_main(zclApp_menu);
+#endif                      
+                    }                     
+                    break;
+                  case 3:
+
+                    break;
+                  case 4:
+
+                    break;                  
+                }
+                break;
+              case 11://zclApp_menu=11                
+                switch (butt){                 
+                  case 0:
+                    if ((bdbAttributes.bdbNodeIsOnANetwork == 1) && (temp_Sender_shortAddr[0] != 0xFFFE) ) {
+#ifdef BIND_REQ                      
+                      temp_countReqBind = 0;
+                      temp_bindingCount[temp_countReqBind] = 0;
+                      temp_bindingStartIndex[temp_countReqBind] = 0;
+                      temp_bindClusterDev[temp_countReqBind] = 0x00;
+                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      zclApp_menu = 0;
+                      zclApp_create_butt_main(zclApp_menu);
+#endif                      
+                    }                      
+                    break;
+                  case 1:
+                    if ((bdbAttributes.bdbNodeIsOnANetwork == 1) && (temp_Sender_shortAddr[1] != 0xFFFE)) {
+#ifdef BIND_REQ                      
+                      temp_countReqBind = 1;
+                      temp_bindingCount[temp_countReqBind] = 0;
+                      temp_bindingStartIndex[temp_countReqBind] = 0;
+                      temp_bindClusterDev[temp_countReqBind] = 0x00;
+                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      zclApp_menu = 0;
+                      zclApp_create_butt_main(zclApp_menu);
+#endif                      
+                    }  
+                    break;
+                  case 2:
+                    if ((bdbAttributes.bdbNodeIsOnANetwork == 1) && (temp_Sender_shortAddr[2] != 0xFFFE)) {
+#ifdef BIND_REQ                      
+                      temp_countReqBind = 2;
+                      temp_bindingCount[temp_countReqBind] = 0;
+                      temp_bindingStartIndex[temp_countReqBind] = 0;
+                      temp_bindClusterDev[temp_countReqBind] = 0x00;
+                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      zclApp_menu = 0;
+                      zclApp_create_butt_main(zclApp_menu);
+#endif                      
+                    }                     
+                    break;
+                  case 3:
+
+                    break;
+                  case 4:
+
+                    break;                  
+                }
+                break;
+              case 12://zclApp_menu=12                
+                switch (butt){                 
+                  case 0:
+                    if (bdbAttributes.bdbNodeIsOnANetwork == 0) {
+                      bdb_StartCommissioning(BDB_COMMISSIONING_MODE_NWK_STEERING | BDB_COMMISSIONING_MODE_FINDING_BINDING);
+                      TftUpdateRefresh();
+                    }                    
+                    break;
+                  case 1:
+ 
+                    break;
+                  case 2:
+                   
+                    break;
+                  case 3:
+
+                    break;
+                  case 4:
+
+                    break;                  
+                }
+                break;
+              case 13://zclApp_menu=13                
+                switch (butt){                 
+                  case 0:
+                    beeping_seq_start(1);
+                    break;
+                  case 1:
+                    beeping_seq_start(2);
+                    break;
+                  case 2:
+                    beeping_seq_stop();
+                    break;
+                  case 3:
+
+                    break;
+                  case 4:
+
+                    break;                  
+                }
+                break;
+            }
+
+            if (butt == 5 && zclApp_menu != 0) {
+              zclApp_menu = 0;
+              zclApp_create_butt_main(zclApp_menu);
+            } 
+         
+}
+
+void zclApp_TPkeyprocessing(void) {          
+          if (!zcl_game){
+            xpt2046_mode = 1;
+            zclApp_keyprocessing();
+          } else {
+#if defined(BREAKOUT)
+            xpt2046_mode = 0;
+            breakout_keyprocessing();
+            TftUpdateRefresh(); 
+#endif // BREAKOUT 
+          }
+}
+
+#endif
 /****************************************************************************
 ****************************************************************************/

@@ -49,14 +49,13 @@ uint32 zclApp_GenTime_TimeUTC = 0;
 uint16 zclApp_bh1750IlluminanceSensor_MeasuredValue = 0;
 
 //uint8 zclApp_Magnet_OnOff = 0;
-//uint8 zclApp_Magnet = 0;
+uint8 zclApp_Magnet = 0;
 uint8 zclApp_Occupied_OnOff = 0;
-uint8 zclApp_Bind_OnOff = 0;
+//uint8 zclApp_Bind_OnOff = 0;
 
 // Occupancy Cluster 
 uint8 zclApp_Occupied = 0; 
 /* Set default to Not be occupied */ 
-//uint8 zclApp_OccType = MS_OCCUPANCY_SENSOR_TYPE_PIR;
 
 #define DEFAULT_PirOccupiedToUnoccupiedDelay 60
 #define DEFAULT_PirUnoccupiedToOccupiedDelay 60
@@ -70,7 +69,8 @@ uint8 zclApp_Occupied = 0;
 #define DEFAULT_MsHumidityPeriod 10
 #define DEFAULT_MsIlluminancePeriod 10
 #define DEFAULT_CfgBatteryPeriod 30 // min
-#define DEFAULT_HvacUiDisplayMode 3 // 0 - invert, 1 - not invert
+#define DEFAULT_HvacUiDisplayMode 0x22 // 0 - invert, 1 - rotate, 2 - backlight, 3 - none //0 - invert, 1 - not invert
+                                       // 4 - blue, 5 - red, 6 - green, 7 - none
 application_config_t zclApp_Config = {.PirOccupiedToUnoccupiedDelay = DEFAULT_PirOccupiedToUnoccupiedDelay,
                                       .PirUnoccupiedToOccupiedDelay = DEFAULT_PirUnoccupiedToOccupiedDelay,
                                       .MsIlluminanceLevelSensingSensitivity = DEFAULT_MsIlluminanceLevelSensingSensitivity,
@@ -122,7 +122,6 @@ CONST zclAttrRec_t zclApp_AttrsFirstEP[] = {
     {GEN_TIME, {ATTRID_TIME_TIME, ZCL_UTC, RRW, (void *)&zclApp_GenTime_TimeUTC}},
     {GEN_TIME, {ATTRID_TIME_LOCAL_TIME, ZCL_UINT32, RRW, (void *)&zclApp_GenTime_TimeUTC}},
     
-//    {HVAC_UI_CONFIG, {ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE, ZCL_BOOLEAN, RRW, (void *)&zclApp_Config.HvacUiDisplayMode}},
     {HVAC_UI_CONFIG, {ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE, ZCL_UINT8, RRW, (void *)&zclApp_Config.HvacUiDisplayMode}},
     
     {TEMP, {ATTRID_MS_TEMPERATURE_MEASURED_VALUE, ZCL_INT16, RR, (void *)&zclApp_Temperature_Sensor_MeasuredValue}},
@@ -140,12 +139,12 @@ CONST zclAttrRec_t zclApp_AttrsFirstEP[] = {
     {HUMIDITY, {ATTRID_HUMIDITY_PERIOD, ZCL_UINT16, RRW, (void *)&zclApp_Config.MsHumidityPeriod}}
 };
 
-/*
+
 CONST zclAttrRec_t zclApp_AttrsSecondEP[] = {
 //    {ONOFF, {ATTRID_ON_OFF, ZCL_BOOLEAN, R, (void *)&zclApp_Magnet_OnOff}},
     {BINARY_INPUT, {ATTRID_GEN_BINARY_INPUT_PRESENTVALUE, ZCL_BOOLEAN, RR, (void *)&zclApp_Magnet}}
 };
-*/
+
 
 CONST zclAttrRec_t zclApp_AttrsThirdEP[] = {
     {ONOFF, {ATTRID_ON_OFF, ZCL_BOOLEAN, R, (void *)&zclApp_Occupied_OnOff}},
@@ -161,24 +160,28 @@ CONST zclAttrRec_t zclApp_AttrsFourthEP[] = {
     {ILLUMINANCE, {ATTRID_ILLUMINANCE_PERIOD, ZCL_UINT16, RRW, (void *)&zclApp_Config.MsIlluminancePeriod}}
 };
 
-//uint8 CONST zclApp_AttrsSecondEPCount = (sizeof(zclApp_AttrsSecondEP) / sizeof(zclApp_AttrsSecondEP[0]));
 uint8 CONST zclApp_AttrsFirstEPCount = (sizeof(zclApp_AttrsFirstEP) / sizeof(zclApp_AttrsFirstEP[0]));
+uint8 CONST zclApp_AttrsSecondEPCount = (sizeof(zclApp_AttrsSecondEP) / sizeof(zclApp_AttrsSecondEP[0]));
 uint8 CONST zclApp_AttrsThirdEPCount = (sizeof(zclApp_AttrsThirdEP) / sizeof(zclApp_AttrsThirdEP[0]));
 uint8 CONST zclApp_AttrsFourthEPCount = (sizeof(zclApp_AttrsFourthEP) / sizeof(zclApp_AttrsFourthEP[0]));
 
 const cId_t zclApp_InClusterListFirstEP[] = {ZCL_CLUSTER_ID_GEN_BASIC, POWER_CFG, ONOFF, TEMP, PRESSURE, HUMIDITY};
+const cId_t zclApp_InClusterListSecondEP[] = {BINARY_INPUT};
 const cId_t zclApp_InClusterListThirdEP[] = {OCCUPANCY};
 const cId_t zclApp_InClusterListFourthEP[] = {ILLUMINANCE};
 
 #define APP_MAX_INCLUSTERS_FIRST_EP (sizeof(zclApp_InClusterListFirstEP) / sizeof(zclApp_InClusterListFirstEP[0]))
+#define APP_MAX_INCLUSTERS_SECOND_EP (sizeof(zclApp_InClusterListSecondEP) / sizeof(zclApp_InClusterListSecondEP[0]))
 #define APP_MAX_INCLUSTERS_THIRD_EP (sizeof(zclApp_InClusterListThirdEP) / sizeof(zclApp_InClusterListThirdEP[0]))
 #define APP_MAX_INCLUSTERS_FOURTH_EP (sizeof(zclApp_InClusterListFourthEP) / sizeof(zclApp_InClusterListFourthEP[0]))
 
 const cId_t zclApp_OutClusterListFirstEP[] = {POWER_CFG, GEN_TIME, HVAC_UI_CONFIG, TEMP, PRESSURE, HUMIDITY};
+//const cId_t zclApp_OutClusterListSecondEP[] = {BINARY_INPUT};
 const cId_t zclApp_OutClusterListThirdEP[] = {ONOFF, OCCUPANCY};
 const cId_t zclApp_OutClusterListFourthEP[] = {ILLUMINANCE};
 
 #define APP_MAX_OUTCLUSTERS_FIRST_EP (sizeof(zclApp_OutClusterListFirstEP) / sizeof(zclApp_OutClusterListFirstEP[0]))
+//#define APP_MAX_OUTCLUSTERS_SECOND_EP (sizeof(zclApp_OutClusterListSecondEP) / sizeof(zclApp_OutClusterListSecondEP[0]))
 #define APP_MAX_OUTCLUSTERS_THIRD_EP (sizeof(zclApp_OutClusterListThirdEP) / sizeof(zclApp_OutClusterListThirdEP[0]))
 #define APP_MAX_OUTCLUSTERS_FOURTH_EP (sizeof(zclApp_OutClusterListFourthEP) / sizeof(zclApp_OutClusterListFourthEP[0]))
 
@@ -196,19 +199,19 @@ SimpleDescriptionFormat_t zclApp_FirstEP = {
     (cId_t *)zclApp_OutClusterListFirstEP         //  byte *pAppInClusterList;
 };
 
-/*
+
 SimpleDescriptionFormat_t zclApp_SecondEP = {
     2,                                                  //  int Endpoint;
     ZCL_HA_PROFILE_ID,                                  //  uint16 AppProfId[2];
     ZCL_HA_DEVICEID_SIMPLE_SENSOR,                      //  uint16 AppDeviceId[2];
     APP_DEVICE_VERSION,                          //  int   AppDevVer:4;
     APP_FLAGS,                                   //  int   AppFlags:4;
-    0,                                                  //  byte  AppNumInClusters;
-    (cId_t *)NULL,                                      //  byte *pAppInClusterList;
-    APP_MAX_OUTCLUSTERS_SECOND_EP,               //  byte  AppNumInClusters;
-    (cId_t *)zclApp_OutClusterListSecondEP        //  byte *pAppInClusterList;
+    APP_MAX_INCLUSTERS_SECOND_EP,                                                  //  byte  AppNumInClusters;
+    (cId_t *)zclApp_InClusterListSecondEP,                                      //  byte *pAppInClusterList;
+    0,               //  byte  AppNumInClusters;
+    (cId_t *)NULL        //  byte *pAppInClusterList;
 };
-*/
+
 SimpleDescriptionFormat_t zclApp_ThirdEP = {
     3,                                                  //  int Endpoint;
     ZCL_HA_PROFILE_ID,                                  //  uint16 AppProfId[2];
