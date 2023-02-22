@@ -31,7 +31,11 @@ void zclCommissioning_Init(uint8 task_id) {
     // this is important to allow connects throught routers
     // to make this work, coordinator should be compiled with this flag #define TP2_LEGACY_ZC
     requestNewTrustCenterLinkKey = FALSE;
-    bdb_StartCommissioning(BDB_COMMISSIONING_MODE_NWK_STEERING | BDB_COMMISSIONING_MODE_FINDING_BINDING);
+#if APP_COMMISSIONING_BY_LONG_PRESS == FALSE
+      bdb_StartCommissioning(BDB_COMMISSIONING_MODE_NWK_STEERING | BDB_COMMISSIONING_MODE_FINDING_BINDING);
+#else 
+      bdb_StartCommissioning(BDB_COMMISSIONING_MODE_IDDLE);
+#endif
 }
 
 static void zclCommissioning_ResetBackoffRetry(void) {
@@ -165,7 +169,14 @@ uint16 zclCommissioning_event_loop(uint8 task_id, uint16 events) {
         zclCommissioning_Sleep(true);
         return (events ^ APP_COMMISSIONING_CLOCK_DOWN_POLING_RATE_EVT);
     }
-
+    
+#if APP_COMMISSIONING_BY_LONG_PRESS == TRUE    
+    if (events & APP_COMMISSIONING_BY_LONG_PRESS_EVT) {
+        LREPMaster("APP_COMMISSIONING_BY_LONG_PRESS_EVT\r\n");
+        bdb_StartCommissioning(BDB_COMMISSIONING_MODE_NWK_STEERING | BDB_COMMISSIONING_MODE_FINDING_BINDING);
+        return (events ^ APP_COMMISSIONING_BY_LONG_PRESS_EVT);
+    }
+#endif
     // Discard unknown events
     return 0;
 }
@@ -187,7 +198,21 @@ void zclCommissioning_HandleKeys(uint8 portAndAction, uint8 keyCode) {
         }
 #endif
     }
-    #if defined(POWER_SAVING)
+#if APP_COMMISSIONING_BY_LONG_PRESS == TRUE 
+    if (portAndAction & HAL_KEY_RELEASE) {
+      osal_stop_timerEx(zclCommissioning_TaskId, APP_COMMISSIONING_BY_LONG_PRESS_EVT);
+    } else {
+      bool statTimer = true;
+#if APP_COMMISSIONING_BY_LONG_PRESS_PORT
+      statTimer = APP_COMMISSIONING_BY_LONG_PRESS_PORT & portAndAction;
+#endif
+      if (statTimer && bdbAttributes.bdbNodeIsOnANetwork == 0) {
+         uint32 timeout = APP_COMMISSIONING_HOLD_TIME_FAST;
+         osal_start_timerEx(zclCommissioning_TaskId, APP_COMMISSIONING_BY_LONG_PRESS_EVT, timeout);
+      }
+    }
+#endif    
+#if defined(POWER_SAVING)
         NLME_SetPollRate(1);
-    #endif
+#endif
 }
