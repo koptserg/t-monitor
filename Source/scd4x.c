@@ -3,7 +3,7 @@
   Product: https://sensirion.com/products/catalog/SCD40/
   Written by Koptyakov Sergey 
   From source https://github.com/sparkfun/SparkFun_SCD4x_Arduino_Library                                                             
-  With the participation of Andrey Lamchenko, aka Burke, LLC EfektaLab, Moscow, Russia
+  With the participation of Andrey Lamchenko, aka Berk, LLC EfektaLab, Moscow, Russia
 */
 
 #include "OSAL.h"
