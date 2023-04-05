@@ -2394,6 +2394,12 @@
             <name>$PROJ_DIR$\..\Source\preinclude.h</name>
         </file>
         <file>
+            <name>$PROJ_DIR$\..\Source\scd4x.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\scd4x.h</name>
+        </file>
+        <file>
             <name>$PROJ_DIR$\..\Source\songdata.c</name>
         </file>
         <file>
@@ -2428,6 +2434,12 @@
         </file>
         <file>
             <name>$PROJ_DIR$\..\Source\zcl_app_data.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\zcl_rep.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\zcl_rep.h</name>
         </file>
     </group>
     <group>
