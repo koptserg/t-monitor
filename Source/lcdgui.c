@@ -475,7 +475,7 @@ void GUI_DisNum(POINT Xpoint, POINT Ypoint, int32_t Nummber,
   GUI_DisString_EN(Xpoint, Ypoint, (const char*)pStr, Font, Color_Background, Color_Foreground );
 }
 
-void GUI_DisNumDP(POINT Xpoint, POINT Ypoint, uint16 Nummber, uint8 dec_places,
+void GUI_DisNumDP(POINT Xpoint, POINT Ypoint, uint32 Nummber, uint8 dec_places,
                 sFONT* Font, COLOR Color_Background, COLOR Color_Foreground )
 {
 
@@ -484,7 +484,6 @@ void GUI_DisNumDP(POINT Xpoint, POINT Ypoint, uint16 Nummber, uint8 dec_places,
   uint8_t *pStr = Str_Array;
 
   if (Xpoint > sLCD_DIS.LCD_Dis_Column || Ypoint > sLCD_DIS.LCD_Dis_Page) {
-//    DEBUG("GUI_DisNum Input exceeds the normal display range\r\n");
     return;
   }
 

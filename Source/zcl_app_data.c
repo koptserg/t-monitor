@@ -47,6 +47,8 @@ uint16 zclApp_HumiditySensor_MeasuredValue = 0;
 uint32 zclApp_GenTime_TimeUTC = 0;
 
 uint16 zclApp_bh1750IlluminanceSensor_MeasuredValue = 0;
+float zclApp_scd4xCO2Sensor_MeasuredValue = 0.0;
+bool zclApp_scd4xCO2Sensor_ForcedRecalibration = 0;
 
 //uint8 zclApp_Magnet_OnOff = 0;
 uint8 zclApp_Magnet = 0;
@@ -64,10 +66,12 @@ uint8 zclApp_Occupied = 0;
 #define DEFAULT_MsPressureMinAbsoluteChange 1
 #define DEFAULT_MsHumidityMinAbsoluteChange 1000 //10.00%
 #define DEFAULT_MsIlluminanceMinAbsoluteChange 10
+#define DEFAULT_CO2MinAbsoluteChange 100
 #define DEFAULT_MsTemperaturePeriod 10
 #define DEFAULT_MsPressurePeriod 10
 #define DEFAULT_MsHumidityPeriod 10
 #define DEFAULT_MsIlluminancePeriod 10
+#define DEFAULT_CO2Period 10
 #define DEFAULT_CfgBatteryPeriod 30 // min
 #define DEFAULT_HvacUiDisplayMode 0x22 // 0 - invert, 1 - rotate, 2 - backlight, 3 - none //0 - invert, 1 - not invert
                                        // 4 - blue, 5 - red, 6 - green, 7 - none
@@ -78,12 +82,14 @@ application_config_t zclApp_Config = {.PirOccupiedToUnoccupiedDelay = DEFAULT_Pi
                                       .MsPressureMinAbsoluteChange = DEFAULT_MsPressureMinAbsoluteChange,
                                       .MsHumidityMinAbsoluteChange = DEFAULT_MsHumidityMinAbsoluteChange,
                                       .MsIlluminanceMinAbsoluteChange = DEFAULT_MsIlluminanceMinAbsoluteChange,
+                                      .CO2MinAbsoluteChange = DEFAULT_CO2MinAbsoluteChange,
                                       .MsTemperaturePeriod = DEFAULT_MsTemperaturePeriod,
                                       .MsPressurePeriod = DEFAULT_MsPressurePeriod,
                                       .MsHumidityPeriod = DEFAULT_MsHumidityPeriod,
                                       .MsIlluminancePeriod = DEFAULT_MsIlluminancePeriod,
+                                      .CO2Period = DEFAULT_CO2Period,
                                       .CfgBatteryPeriod = DEFAULT_CfgBatteryPeriod,
-                                      .HvacUiDisplayMode = DEFAULT_HvacUiDisplayMode
+                                      .HvacUiDisplayMode = DEFAULT_HvacUiDisplayMode                                      
 };
 
 // Basic Cluster
@@ -94,7 +100,7 @@ const uint8 zclApp_StackVersion = 4;
 
 //{lenght, 'd', 'a', 't', 'a'}
 const uint8 zclApp_ManufacturerName[] = {9, 'm', 'o', 'd', 'k', 'a', 'm', '.', 'r', 'u'};
-const uint8 zclApp_ModelId[] = {16, 'D', 'I', 'Y', 'R', 'u', 'Z', '_', 'E', '-','M', 'o', 'n', 'i', 't', 'o', 'r'};
+const uint8 zclApp_ModelId[] = {16, 'D', 'I', 'Y', 'R', 'u', 'Z', '_', 'T', '-','M', 'o', 'n', 'i', 't', 'o', 'r'};
 const uint8 zclApp_PowerSource = POWER_SOURCE_BATTERY;
 
 /*********************************************************************
@@ -155,36 +161,47 @@ CONST zclAttrRec_t zclApp_AttrsThirdEP[] = {
 
 CONST zclAttrRec_t zclApp_AttrsFourthEP[] = {
     {ILLUMINANCE, {ATTRID_MS_ILLUMINANCE_MEASURED_VALUE, ZCL_UINT16, RR, (void *)&zclApp_bh1750IlluminanceSensor_MeasuredValue}},
-    {ILLUMINANCE, {ATTRID_ILLUMINANCE_MIN_ABSOLUTE_CHANGE, ZCL_UINT16, RRW, (void *)&zclApp_Config.MsIlluminanceMinAbsoluteChange}},
     {ILLUMINANCE, {ATTRID_ILLUMINANCE_LEVEL_SENSING_SENSITIVITY, ZCL_UINT16, RRW, (void *)&zclApp_Config.MsIlluminanceLevelSensingSensitivity}},
+    {ILLUMINANCE, {ATTRID_ILLUMINANCE_MIN_ABSOLUTE_CHANGE, ZCL_UINT16, RRW, (void *)&zclApp_Config.MsIlluminanceMinAbsoluteChange}},
     {ILLUMINANCE, {ATTRID_ILLUMINANCE_PERIOD, ZCL_UINT16, RRW, (void *)&zclApp_Config.MsIlluminancePeriod}}
+};
+
+CONST zclAttrRec_t zclApp_AttrsFifthEP[] = {
+    {ZCL_CO2, {ATTRID_CO2_MEASURED_VALUE, ZCL_SINGLE, RR, (void *)&zclApp_scd4xCO2Sensor_MeasuredValue}},
+    {ZCL_CO2, {ATTRID_CO2_FORCED_RECALIBRATION, ZCL_BOOLEAN, RRW, (void *)&zclApp_scd4xCO2Sensor_ForcedRecalibration}},
+    {ZCL_CO2, {ATTRID_CO2_MIN_ABSOLUTE_CHANGE, ZCL_UINT16, RRW, (void *)&zclApp_Config.CO2MinAbsoluteChange}},
+    {ZCL_CO2, {ATTRID_CO2_PERIOD, ZCL_UINT16, RRW, (void *)&zclApp_Config.CO2Period}}
 };
 
 uint8 CONST zclApp_AttrsFirstEPCount = (sizeof(zclApp_AttrsFirstEP) / sizeof(zclApp_AttrsFirstEP[0]));
 uint8 CONST zclApp_AttrsSecondEPCount = (sizeof(zclApp_AttrsSecondEP) / sizeof(zclApp_AttrsSecondEP[0]));
 uint8 CONST zclApp_AttrsThirdEPCount = (sizeof(zclApp_AttrsThirdEP) / sizeof(zclApp_AttrsThirdEP[0]));
 uint8 CONST zclApp_AttrsFourthEPCount = (sizeof(zclApp_AttrsFourthEP) / sizeof(zclApp_AttrsFourthEP[0]));
+uint8 CONST zclApp_AttrsFifthEPCount = (sizeof(zclApp_AttrsFifthEP) / sizeof(zclApp_AttrsFifthEP[0]));
 
 const cId_t zclApp_InClusterListFirstEP[] = {ZCL_CLUSTER_ID_GEN_BASIC, POWER_CFG, ONOFF, TEMP, PRESSURE, HUMIDITY};
 const cId_t zclApp_InClusterListSecondEP[] = {BINARY_INPUT};
 const cId_t zclApp_InClusterListThirdEP[] = {OCCUPANCY};
 const cId_t zclApp_InClusterListFourthEP[] = {ILLUMINANCE};
+const cId_t zclApp_InClusterListFifthEP[] = {ZCL_CO2};
 
 #define APP_MAX_INCLUSTERS_FIRST_EP (sizeof(zclApp_InClusterListFirstEP) / sizeof(zclApp_InClusterListFirstEP[0]))
 #define APP_MAX_INCLUSTERS_SECOND_EP (sizeof(zclApp_InClusterListSecondEP) / sizeof(zclApp_InClusterListSecondEP[0]))
 #define APP_MAX_INCLUSTERS_THIRD_EP (sizeof(zclApp_InClusterListThirdEP) / sizeof(zclApp_InClusterListThirdEP[0]))
 #define APP_MAX_INCLUSTERS_FOURTH_EP (sizeof(zclApp_InClusterListFourthEP) / sizeof(zclApp_InClusterListFourthEP[0]))
+#define APP_MAX_INCLUSTERS_FIFTH_EP (sizeof(zclApp_InClusterListFifthEP) / sizeof(zclApp_InClusterListFifthEP[0]))
 
 const cId_t zclApp_OutClusterListFirstEP[] = {POWER_CFG, GEN_TIME, HVAC_UI_CONFIG, TEMP, PRESSURE, HUMIDITY};
 //const cId_t zclApp_OutClusterListSecondEP[] = {BINARY_INPUT};
 const cId_t zclApp_OutClusterListThirdEP[] = {ONOFF, OCCUPANCY};
 const cId_t zclApp_OutClusterListFourthEP[] = {ILLUMINANCE};
+const cId_t zclApp_OutClusterListFifthEP[] = {ZCL_CO2};
 
 #define APP_MAX_OUTCLUSTERS_FIRST_EP (sizeof(zclApp_OutClusterListFirstEP) / sizeof(zclApp_OutClusterListFirstEP[0]))
 //#define APP_MAX_OUTCLUSTERS_SECOND_EP (sizeof(zclApp_OutClusterListSecondEP) / sizeof(zclApp_OutClusterListSecondEP[0]))
 #define APP_MAX_OUTCLUSTERS_THIRD_EP (sizeof(zclApp_OutClusterListThirdEP) / sizeof(zclApp_OutClusterListThirdEP[0]))
 #define APP_MAX_OUTCLUSTERS_FOURTH_EP (sizeof(zclApp_OutClusterListFourthEP) / sizeof(zclApp_OutClusterListFourthEP[0]))
-
+#define APP_MAX_OUTCLUSTERS_FIFTH_EP (sizeof(zclApp_OutClusterListFifthEP) / sizeof(zclApp_OutClusterListFifthEP[0]))
 
 
 SimpleDescriptionFormat_t zclApp_FirstEP = {
@@ -236,6 +253,19 @@ SimpleDescriptionFormat_t zclApp_FourthEP = {
     (cId_t *)zclApp_OutClusterListFourthEP        //  byte *pAppInClusterList;
 };
 
+SimpleDescriptionFormat_t zclApp_FifthEP = {
+    5,                                                  //  int Endpoint;
+    ZCL_HA_PROFILE_ID,                                  //  uint16 AppProfId[2];
+    ZCL_HA_DEVICEID_SIMPLE_SENSOR,                      //  uint16 AppDeviceId[2];
+    APP_DEVICE_VERSION,                          //  int   AppDevVer:4;
+    APP_FLAGS,                                   //  int   AppFlags:4;
+    APP_MAX_INCLUSTERS_FIFTH_EP,                                                  //  byte  AppNumInClusters;
+    (cId_t *)zclApp_InClusterListFifthEP,                                      //  byte *pAppInClusterList;
+    APP_MAX_OUTCLUSTERS_FIFTH_EP,               //  byte  AppNumInClusters;
+    (cId_t *)zclApp_OutClusterListFifthEP        //  byte *pAppInClusterList;
+};
+
+
 void zclApp_ResetAttributesToDefaultValues(void) {
     zclApp_Config.PirOccupiedToUnoccupiedDelay = DEFAULT_PirOccupiedToUnoccupiedDelay;
     zclApp_Config.PirUnoccupiedToOccupiedDelay = DEFAULT_PirUnoccupiedToOccupiedDelay;
@@ -244,10 +274,12 @@ void zclApp_ResetAttributesToDefaultValues(void) {
     zclApp_Config.MsPressureMinAbsoluteChange = DEFAULT_MsPressureMinAbsoluteChange;
     zclApp_Config.MsHumidityMinAbsoluteChange = DEFAULT_MsHumidityMinAbsoluteChange;
     zclApp_Config.MsIlluminanceMinAbsoluteChange = DEFAULT_MsIlluminanceMinAbsoluteChange;
+    zclApp_Config.CO2MinAbsoluteChange = DEFAULT_CO2MinAbsoluteChange;
     zclApp_Config.MsTemperaturePeriod = DEFAULT_MsTemperaturePeriod;
     zclApp_Config.MsPressurePeriod = DEFAULT_MsPressurePeriod;
     zclApp_Config.MsHumidityPeriod = DEFAULT_MsHumidityPeriod;
     zclApp_Config.MsIlluminancePeriod = DEFAULT_MsIlluminancePeriod;
+    zclApp_Config.CO2Period = DEFAULT_CO2Period;
     zclApp_Config.CfgBatteryPeriod = DEFAULT_CfgBatteryPeriod;
     zclApp_Config.HvacUiDisplayMode = DEFAULT_HvacUiDisplayMode;    
 }

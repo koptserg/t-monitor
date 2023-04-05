@@ -12,10 +12,12 @@
 
 #include "nwk_util.h"
 #include "zcl.h"
+
 #include "zcl_app.h"
+#include "zcl_rep.h"
+
 #include "zcl_diagnostic.h"
 #include "zcl_general.h"
-//#include "zcl_lighting.h"
 #include "zcl_ms.h"
 #include "zcl_hvac.h"
 
@@ -36,6 +38,8 @@
 
 #include "bme280spi.h"
 #include "bh1750.h"
+//#include "scd40.h"
+#include "scd4x.h"
 #include "battery.h"
 #include "commissioning.h"
 #include "factory_reset.h"
@@ -111,13 +115,16 @@ static uint8 currentSensorsReadingPhase = 0;
 
 uint8 report = 0;
 uint8 power = 0;
-bool bmeDetect = 0;
+bool  bmeDetect = 0;
 uint8 motionDetect = 0;
 uint8 bh1750Detect = 0;
 uint8 BH1750_mode = ONE_TIME_HIGH_RES_MODE;
+bool  scd4xDetect = 0;
 
 uint16 temp_bh1750IlluminanceSensor_MeasuredValue[3];
 uint16 old_bh1750IlluminanceSensor_MeasuredValue;
+uint16 temp_scd4xCO2_Sensor_MeasuredValue[3];
+uint16 old_scd4xCO2_Sensor_MeasuredValue;
 uint16 temp_Temperature_Sensor_MeasuredValue[3];
 uint16 old_Temperature_Sensor_MeasuredValue;
 uint16 temp_PressureSensor_MeasuredValue[3];
@@ -149,9 +156,7 @@ uint8 temp_countReqLqi = 0;
 uint8 temp_bindingCount[3] = {0, 0, 0};
 uint8 temp_bindingStartIndex[3] = {0, 0, 0};
 uint8 temp_countReqBind = 0;
-// enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
+
 uint16 temp_bindClusterDev[3] = {0x0000, 0x0000, 0x0000};
 uint16 old_bindClusterDev[3]  = {0x0000, 0x0000, 0x0000};
 uint16 zclApp_UpDown[3]       = {0x0000, 0x0000, 0x0000}; 
@@ -199,6 +204,7 @@ static void zclApp_bh1750ReadLumosity(void);
 static void zclApp_bh1750setMTreg(void);
 static void zclApp_MotionPullUpDown(void);
 static void zclApp_ConfigDisplay(void);
+static void zclApp_scd4xReadCO2(void);
 
 #if defined(EPD3IN7)
 static void zclApp_EpdUpdateClock(void);
@@ -232,12 +238,14 @@ static void TftBattery(uint8 temp_b);
 static void TftOccupancy(uint8 temp_oc);
 static void TftBinary(uint8 temp_b);
 static void TftIlluminance(uint8 temp_i);
+static void TftCO2(uint8 temp_co2);
 static void TftTemperature(uint8 temp_t);
 static void TftHumidity(uint8 temp_h);
 static void TftPressure(uint8 temp_p);
 static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit);
 static void zclApp_keyprocessing(void);
 static void zclApp_create_butt_main(uint8 block);
+static void zclApp_automenu(void);
 #if defined(HAL_LCD_PWM_PORT1)
 static void InitLedPWM(uint8 level);
 #endif
@@ -338,7 +346,11 @@ void zclApp_Init(byte task_id) {
     
     HalI2CInit();
     bh1750Detect = bh1750_init(BH1750_mode);
-    zclApp_bh1750setMTreg();  
+    zclApp_bh1750setMTreg();
+
+    SCD4x_setTemperatureOffset(4.3, 1); // 5 grC 1 mc
+//    SCD4x_setSensorAltitude(270, 1); 
+    scd4xDetect = SCD4x_begin(true, true, false);
     
     // this is important to allow connects throught routers
     // to make this work, coordinator should be compiled with this flag #define TP2_LEGACY_ZC
@@ -362,6 +374,10 @@ void zclApp_Init(byte task_id) {
     zcl_registerAttrList(zclApp_FourthEP.EndPoint, zclApp_AttrsFourthEPCount, zclApp_AttrsFourthEP);
     bdb_RegisterSimpleDescriptor(&zclApp_FourthEP);   
     zcl_registerReadWriteCB(zclApp_FourthEP.EndPoint, NULL, zclApp_ReadWriteAuthCB);
+    
+    zcl_registerAttrList(zclApp_FifthEP.EndPoint, zclApp_AttrsFifthEPCount, zclApp_AttrsFifthEP);
+    bdb_RegisterSimpleDescriptor(&zclApp_FifthEP);   
+    zcl_registerReadWriteCB(zclApp_FifthEP.EndPoint, NULL, zclApp_ReadWriteAuthCB);
 
     zcl_registerForMsg(zclApp_TaskID);
 
@@ -520,6 +536,9 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
               case BINARY_INPUT:
                 temp_bindClusterDev[bdev] |= CB_BINARY_INPUT;
                 break;
+              case ZCL_CO2:
+                temp_bindClusterDev[bdev] |= CB_CO2;
+                break;
             }           
           }
         }
@@ -528,12 +547,13 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
 //          LREPMaster("BIND_BIND_BIND\r\n");
           temp_bindingStartIndex[bdev] = temp_bindingStartIndex[bdev] +3;
           temp_countReqBind = bdev;
-          osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+//          osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+          zclApp_RequestBind();
         } else {
           LREPMaster("BIND_BIND_0\r\n");
           temp_bindingCount[bdev] = 0;
-          temp_bindingStartIndex[bdev] = 0;
-          if (temp_bindClusterDev[bdev] == 0x00) {
+          temp_bindingStartIndex[bdev] = 0;         
+          if (temp_bindClusterDev[bdev] == 0x0000) {
             temp_Sender_shortAddr[bdev] = 0xFFFE;
             temp_LqiStartIndex[bdev] = 0;
             temp_lqi[bdev] = 255;
@@ -778,12 +798,14 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         // return unprocessed events
         return (events ^ SYS_EVENT_MSG);
     }
-#ifdef BIND_REQ   
+#ifdef BIND_REQ 
+/*    
     if (events & APP_REQ_BIND_EVT) {
         LREPMaster("APP_REQ_BIND_EVT\r\n");
         zclApp_RequestBind();
         return (events ^ APP_REQ_BIND_EVT);
     }
+*/
 #endif 
     if (events & APP_REPORT_CLOCK_EVT) {
       LREPMaster("APP_REPORT_CLOCK_EVT\r\n");
@@ -817,8 +839,9 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
           temp_bindingCount[temp_countReqBind] = 0;
           temp_bindingStartIndex[temp_countReqBind] = 0;
         }
-        temp_bindClusterDev[temp_countReqBind] = 0x00;
-        osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+        temp_bindClusterDev[temp_countReqBind] = 0x0000;
+//        osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+        zclApp_RequestBind();
 #endif 
 #if defined(EPD3IN7)        
         fullupdate_hour = fullupdate_hour +1;
@@ -874,6 +897,14 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
            
         return (events ^ APP_REPORT_ILLUMINANCE_EVT);
     }
+    
+    if (events & APP_REPORT_CO2_EVT) {
+        LREPMaster("APP_REPORT_CO2_EVT\r\n");       
+        report = 0;
+        zclApp_scd4xReadCO2();
+           
+        return (events ^ APP_REPORT_CO2_EVT);
+    }
    
     if (events & APP_REPORT_BATTERY_EVT) {
         LREPMaster("APP_REPORT_BATTERY_EVT\r\n");
@@ -909,7 +940,8 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         zclApp_Occupied = 1;
         zclApp_Occupied_OnOff = 1;
         zclGeneral_SendOnOff_CmdOn(zclApp_ThirdEP.EndPoint, &inderect_DstAddr, TRUE, bdb_getZCLFrameCounter());
-        bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
+//        bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
+        zclRep_Occupancy();
         
         return (events ^ APP_MOTION_ON_EVT);
     }
@@ -920,8 +952,8 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         zclApp_Occupied = 0;
         zclApp_Occupied_OnOff = 0;
         zclGeneral_SendOnOff_CmdOff(zclApp_ThirdEP.EndPoint, &inderect_DstAddr, TRUE, bdb_getZCLFrameCounter());
-        bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
-        
+//        bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
+        zclRep_Occupancy();       
         return (events ^ APP_MOTION_OFF_EVT);
     }
     
@@ -1034,20 +1066,22 @@ static void zclApp_ReadSensors(void) {
 //        HalLedSet(HAL_LED_1, HAL_LED_MODE_BLINK);    
       zclBattery_Report();      
         break;
-    case 1:
-
+    case 4:
+      if (scd4xDetect == 1) {
+        zclApp_scd4xReadCO2();
+      }
           break;
-    case 2:
+    case 1:
       if (bmeDetect == 1){
           zclApp_ReadBME280Temperature();
       }
         break;
-    case 3:
+    case 2:
       if (bmeDetect == 1){
           zclApp_ReadBME280Pressure();
       }
         break;
-    case 4:
+    case 3:
       if (bmeDetect == 1){
           zclApp_ReadBME280Humidity();
       }
@@ -1074,11 +1108,12 @@ static void zclApp_ReadSensors(void) {
         break;
     case 9: 
 #ifdef BIND_REQ
-      temp_countReqBind = 0;
-      temp_bindingCount[temp_countReqBind] = 0;
-      temp_bindingStartIndex[temp_countReqBind] = 0;
-      temp_bindClusterDev[temp_countReqBind] = 0x00;
-      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+//      temp_countReqBind = 0;
+//      temp_bindingCount[temp_countReqBind] = 0;
+//      temp_bindingStartIndex[temp_countReqBind] = 0;
+//      temp_bindClusterDev[temp_countReqBind] = 0x0000;
+//      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+//      zclApp_RequestBind();
 #endif
         break;
     default:
@@ -1091,12 +1126,35 @@ static void zclApp_ReadSensors(void) {
   zclApp_StartReloadTimer();
 }
 
+static void zclApp_scd4xReadCO2(void) {
+//        LCD_SetArealColorWH(100, 0, 200, 16, WHITE);        
+        uint16 scd4x_co2_16 = (uint32)SCD4x_getCO2();
+//        GUI_DisNumDP(100, 0, scd4x_co2_16, 0, &Font16, WHITE, BLACK );
+//        GUI_DisNumDP(150, 0, old_scd4xCO2_Sensor_MeasuredValue, 0, &Font16, WHITE, BLACK );
+        
+        float scd4x_co2 = (float)SCD4x_getCO2()/ 1000000.0;
+        zclApp_scd4xCO2Sensor_MeasuredValue = scd4x_co2;
+        
+        uint16 co2 = 0;
+        if (old_scd4xCO2_Sensor_MeasuredValue > scd4x_co2_16){
+          co2 = (old_scd4xCO2_Sensor_MeasuredValue - scd4x_co2_16);
+        } else {
+          co2 = (scd4x_co2_16 - old_scd4xCO2_Sensor_MeasuredValue);
+        }
+        if (co2 > zclApp_Config.CO2MinAbsoluteChange || report == 1){ // 100 
+          old_scd4xCO2_Sensor_MeasuredValue = scd4x_co2_16;         
+          zclRep_CO2Report();
+        } 
+}
+
 static void zclApp_ConfigDisplay(void) {
-  bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HVAC_UI_CONFIG, ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE);
+//  bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HVAC_UI_CONFIG, ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE);
+  zclRep_ConfigDisplay();
 }
 
 static void zclApp_LocalTime(void) {
-  bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, GEN_TIME, ATTRID_TIME_LOCAL_TIME);
+//  bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, GEN_TIME, ATTRID_TIME_LOCAL_TIME);
+  zclRep_LocalTime();
 }
 
 static void zclApp_bh1750StartLumosity(void) {
@@ -1122,7 +1180,8 @@ static void zclApp_bh1750ReadLumosity(void) {
     }
     if (illum > zclApp_Config.MsIlluminanceMinAbsoluteChange || report == 1){ // 10 lux
       old_bh1750IlluminanceSensor_MeasuredValue = zclApp_bh1750IlluminanceSensor_MeasuredValue;
-      bdb_RepChangedAttrValue(zclApp_FourthEP.EndPoint, ILLUMINANCE, ATTRID_MS_ILLUMINANCE_MEASURED_VALUE);
+//      bdb_RepChangedAttrValue(zclApp_FourthEP.EndPoint, ILLUMINANCE, ATTRID_MS_ILLUMINANCE_MEASURED_VALUE);
+      zclRep_IlluminanceReport();
     }
 #ifdef HAL_LCD_PWM_PORT1
     uint8 levelPWM = 0;
@@ -1151,8 +1210,9 @@ static void zclApp_ReadBME280Temperature(void) {
           temp = (zclApp_Temperature_Sensor_MeasuredValue - old_Temperature_Sensor_MeasuredValue);
         }
         if (temp > zclApp_Config.MsTemperatureMinAbsoluteChange || report == 1){ //50 - 0.5 
-          old_Temperature_Sensor_MeasuredValue = zclApp_Temperature_Sensor_MeasuredValue;
-          bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, TEMP, ATTRID_MS_TEMPERATURE_MEASURED_VALUE);
+          old_Temperature_Sensor_MeasuredValue = zclApp_Temperature_Sensor_MeasuredValue;         
+//          bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, TEMP, ATTRID_MS_TEMPERATURE_MEASURED_VALUE);
+          zclRep_BME280TemperatureReport();
         }        
 }
 
@@ -1172,7 +1232,11 @@ static void zclApp_ReadBME280Pressure(void) {
         if (press > zclApp_Config.MsPressureMinAbsoluteChange || report == 1){ //1gPa
           old_PressureSensor_MeasuredValue = zclApp_PressureSensor_MeasuredValue;
           old_PressureSensor_ScaledValue = zclApp_PressureSensor_ScaledValue;
-          bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, PRESSURE, ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE);
+//          bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, PRESSURE, ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE);
+          zclRep_BME280PressureReport();
+        }
+        if (scd4xDetect == 1){
+          SCD4x_setAmbientPressure((uint32)bme280_readPressure()*100, 1);
         }
 }
 
@@ -1189,11 +1253,12 @@ static void zclApp_ReadBME280Humidity(void) {
         }
         if (humid > zclApp_Config.MsHumidityMinAbsoluteChange || report == 1 ){ //10%
           old_HumiditySensor_MeasuredValue = zclApp_HumiditySensor_MeasuredValue;
-          bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HUMIDITY, ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE);
+//          bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HUMIDITY, ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE);
+          zclRep_BME280HumidityReport();
         }
 }
 
-static void zclApp_Report(void) { osal_start_reload_timer(zclApp_TaskID, APP_READ_SENSORS_EVT, 100); }
+static void zclApp_Report(void) { osal_start_reload_timer(zclApp_TaskID, APP_READ_SENSORS_EVT, 200); }
 
 static void zclApp_BasicResetCB(void) {
     LREPMaster("BasicResetCB\r\n");
@@ -1212,9 +1277,15 @@ static void zclApp_SaveAttributesToNV(void) {
     uint8 writeStatus = osal_nv_write(NW_APP_CONFIG, 0, sizeof(application_config_t), &zclApp_Config);
     LREP("Saving attributes to NV write=%d\r\n", writeStatus);
     
-    zclApp_GenTime_old = zclApp_GenTime_TimeUTC;
-    
+    zclApp_GenTime_old = zclApp_GenTime_TimeUTC;    
     osal_setClock(zclApp_GenTime_TimeUTC);
+    
+    if(scd4xDetect == 1 && zclApp_scd4xCO2Sensor_ForcedRecalibration == 1){
+      float *correction = 0;
+      SCD4x_performForcedRecalibrationArg(0x01e0, correction);
+      zclApp_scd4xCO2Sensor_ForcedRecalibration = 0;
+    }
+    
 #if defined(EPD3IN7)     
 //    zclApp_EpdUpdateClock();  
 //    EpdTimeDateWeek(); // update time, date, weekday
@@ -1226,7 +1297,7 @@ static void zclApp_SaveAttributesToNV(void) {
 //      TftTimeDateWeek(); // time, date, weekday
       TftUpdateRefresh();
     }
-#endif // TFT3IN5    
+#endif // TFT3IN5
     zclApp_bh1750setMTreg();
     zclApp_StopReloadTimer();
     zclApp_StartReloadTimer();
@@ -1248,6 +1319,10 @@ static void zclApp_StopReloadTimer(void) {
       osal_stop_timerEx(zclApp_TaskID, APP_REPORT_ILLUMINANCE_EVT);
       osal_clear_event(zclApp_TaskID, APP_REPORT_ILLUMINANCE_EVT);
     }
+    if (scd4xDetect == 1){
+      osal_stop_timerEx(zclApp_TaskID, APP_REPORT_CO2_EVT);
+      osal_clear_event(zclApp_TaskID, APP_REPORT_CO2_EVT);
+    }
 }
 
 static void zclApp_StartReloadTimer(void) {
@@ -1268,6 +1343,11 @@ static void zclApp_StartReloadTimer(void) {
   if (bh1750Detect == 1){
     if (zclApp_Config.MsIlluminancePeriod != 0) {
       osal_start_reload_timer(zclApp_TaskID, APP_REPORT_ILLUMINANCE_EVT, (uint32)zclApp_Config.MsIlluminancePeriod * 1000);
+    }
+  } 
+  if (scd4xDetect == 1){
+    if (zclApp_Config.CO2Period != 0) {
+      osal_start_reload_timer(zclApp_TaskID, APP_REPORT_CO2_EVT, (uint32)zclApp_Config.CO2Period * 1000);
     }
   } 
 }
@@ -1936,6 +2016,13 @@ static void EpdOccupancy(uint8 temp_oc){
 #endif
 
 #if defined(TFT3IN5)
+static void TftCO2(uint8 temp_co2){
+  //CO2
+  TftWidgetMeasuredValue(temp_co2, CB_CO2); //0x80 CO2
+}
+#endif
+
+#if defined(TFT3IN5)
 static void TftIlluminance(uint8 temp_i){
   //Illuminance
   TftWidgetMeasuredValue(temp_i, CB_ILLUMINANCE); //0x02 illuminance
@@ -2176,7 +2263,7 @@ static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit){
     scale = 2;
     foreground = color_scheme[scheme][3];
     textcolor = color_scheme[scheme][2];
-  }
+  }  
   if (cluster_bit == CB_PRESSURE){ // 0x08 pressure
     if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
       x = 160 + (w/2) + wb;
@@ -2187,6 +2274,20 @@ static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit){
     }
     string_uint = "hPa";
     value = temp_PressureSensor_MeasuredValue[dev_num];
+    scale = 0;
+    foreground = color_scheme[scheme][5];
+    textcolor = color_scheme[scheme][4];
+  }
+  if (cluster_bit == CB_CO2){ // 0x80 CO2
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ 
+      x = 160 + (w/2) + wb;
+      y = 188 + row;
+    } else {// portrait
+      x = 4 + col;
+      y = 136 + ((48 + hb) * 4);
+    }
+    string_uint = "ppm";
+    value = temp_scd4xCO2_Sensor_MeasuredValue[dev_num];
     scale = 0;
     foreground = color_scheme[scheme][5];
     textcolor = color_scheme[scheme][4];
@@ -2481,14 +2582,8 @@ static void EpdPressure(uint8 temp_p){
 
 #if defined(TFT3IN5)
 static void TfttestRefresh(uint8 i)
-{       
-// enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
-  
-//  for(uint8 i = 0; i <= 2; i++ ){ 
-      LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);
-      
+{
+      LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);     
       TftBindStatus(i);  // status bind
       TftLqi(i);         // lqi
       TftBattery(i);     // percentage battery
@@ -2499,26 +2594,22 @@ static void TfttestRefresh(uint8 i)
       TftTemperature(i); // temperature
       TftHumidity(i);    // humidity
       TftPressure(i);    // pressure
-//  }
-
+      if (!(temp_bindClusterDev[i] & CB_PRESSURE)) {
+        TftCO2(i);       // co2
+      }
 }
 
 void TftUpdateRefresh(void) { 
             if (!zcl_game) {
               if (zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT){
-//                zclApp_lcd_background = WHITE;
                 zclApp_lcd_background = color_scheme[scheme][3];
               } else {
-//                zclApp_lcd_background = BLACK;
                 zclApp_lcd_background = color_scheme[scheme][2];
               }
               GUI_Clear(zclApp_lcd_background);
-//              TftStatus(0);
-//              TftTimeDateWeek();
               zclApp_menu = 0;
               zclApp_create_butt_main(zclApp_menu);
-//              zclApp_create_butt();
-              for (uint8 i = 0; i <= 2; i++) {
+              for (uint8 i = 0; i <= 2; i++) {               
                 if (temp_Sender_shortAddr[i] != 0xFFFE){
                   TfttestRefresh(i);
                 }
@@ -2535,10 +2626,7 @@ static void EpdtestRefresh(void)
   
   EpdTimeDateWeek(); // time, date, weekday
   EpdStatus(0); // status network device
-  
-// enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
+
   for(uint8 i = 0; i <= 2; i++ ){ 
     LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);
     zclApp_EpdSensors(i);
@@ -2642,9 +2730,7 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
   
   zclReportCmd_t *pInAttrReport;
   pInAttrReport = (zclReportCmd_t *)pInMsg->attrCmd; 
-// enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
+  
   for (uint8 n = 0; n < (pInAttrReport->numAttr); n++ ){
     if (pInMsg->clusterId == TEMP && pInAttrReport->attrList[n].attrID == ATTRID_MS_TEMPERATURE_MEASURED_VALUE){
       if (temp_Temperature_Sensor_MeasuredValue[i] > BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1])){
@@ -2751,6 +2837,25 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       }
 #endif // TFT3IN5       
     }
+    
+    if (pInMsg->clusterId == ZCL_CO2 && pInAttrReport->attrList[n].attrID == ATTRID_CO2_MEASURED_VALUE){
+      float value_float;
+      memcpy(&value_float, pInAttrReport->attrList[n].attrData, sizeof(float) );
+      if (temp_scd4xCO2_Sensor_MeasuredValue[i] > (uint16)(value_float * 1000000)){
+        zclApp_UpDown[i] &= ~CB_CO2; // down
+      } else {
+        zclApp_UpDown[i] |=  CB_CO2; // up
+      }
+      temp_scd4xCO2_Sensor_MeasuredValue[i] = (uint16)(value_float * 1000000);
+      temp_bindClusterDev[i] |= CB_CO2;
+      old_bindClusterDev[i]  |= CB_CO2;
+#if defined(TFT3IN5) 
+      if (!zcl_game){
+        TftCO2(i);
+      }
+#endif // TFT3IN5    
+    }
+    
 #if defined(EPD3IN7) 
     EpdRefresh();
 #endif // EPD3IN7    
@@ -2796,6 +2901,9 @@ static void zclApp_ProcessIncomingMsg( zclIncomingMsg_t *pInMsg )
           zclApp_AttrIncomingReport( pInMsg );
           break;
         case ZCL_CLUSTER_ID_GEN_BINARY_INPUT_BASIC:
+          zclApp_AttrIncomingReport( pInMsg );
+          break;
+        case ZCL_CO2:
           zclApp_AttrIncomingReport( pInMsg );
           break;
         default:
@@ -2848,7 +2956,8 @@ static void InitLedPWM(uint8 level){
 #endif
 
 #ifdef TFT3IN5
-static char buttonlabels[14][6][6] = { // [menu][butt][number]
+
+const char buttonlabels_const[14][6][6] = { // [menu][butt][number]
                                        " ", " ", "MENU", " ",  " ", " ",     //0
                                        "NET", "DISP", "GAME", "BEEP", " ", "EXIT", //1
                                        "COLOR", "INVER", "ROTAT", " ", "BACKL", "EXIT", //2
@@ -2856,7 +2965,7 @@ static char buttonlabels[14][6][6] = { // [menu][butt][number]
                                        " ", "LIGHT", "DARK", " ", " ", "EXIT", //4
                                        " ", "PORTR", "LANDS", " ", " ", "EXIT", //5
                                        "ALL", "TEMP", "HUMID", "PRESS", ">>>", "EXIT", //6
-                                       "BATT", "ILLUM", " ", "OCCUP", "MODE", "EXIT", //7
+                                       "BATT", "ILLUM", "CO2", "OCCUP", "MODE", "EXIT", //7
                                        "REMOV", "REPOR", "TIME", "LQI", "BIND", "EXIT", //8
                                        "MAX", "AUTO", " ", " ", " ", "EXIT", //9
                                        "LQI0", "LQI1", "LQI2", " ", " ", "EXIT", //10
@@ -2865,10 +2974,15 @@ static char buttonlabels[14][6][6] = { // [menu][butt][number]
                                        "SONG1", "SONG2", "STOP", " ", " ", "EXIT", //13
 }; 
 
+static char buttonlabels[1][6][6] = { // [menu][butt][number]
+                                       " ", " ", "MENU", " ",  " ", " ",     //0
+}; 
 static char zclApp_status_string[20] = "";
 static uint8 zclApp_butt = 0;
 
 static void zclApp_create_butt_main(uint8 block) {
+  zclApp_automenu();
+  
   LCD_SetArealColor(0, 0, 320, 119, zclApp_lcd_background);
 
   if (block != 0){
@@ -2877,8 +2991,8 @@ static void zclApp_create_butt_main(uint8 block) {
       for (uint8 col=0; col<3; col++) {
           initButton(col + row*3, 4+(100/2)+col*(100+6), 16+(48/2)+row*(48+4),    // i, x, y, w, h, outline, fill, text
                   100, 48,  WHITE, color_scheme[scheme][4], color_scheme[scheme][2],
-                  buttonlabels[block][col + row*3], 2);
-        if (buttonlabels[block][col + row*3][0] != ' ') {
+                  buttonlabels[0][col + row*3], 2);
+        if (buttonlabels[0][col + row*3][0] != ' ') {
           drawButton(col + row*3, 0);
         }  
       }
@@ -2894,25 +3008,101 @@ static void zclApp_create_butt_main(uint8 block) {
   }
 }
 
-void zclApp_keyprocessing(void) {
+static void zclApp_automenu(void) {
+  //copy from constant to variable
+  for (uint8 m = 0; m < 6; m++){
+    for (uint8 n = 0; n < 6; n++){
+      buttonlabels[0][m][n] = buttonlabels_const[zclApp_menu][m][n];
+    }
+  }
+  //form the address of the device in the button
+  if (zclApp_menu == 10 || zclApp_menu == 11){
+    for (uint8 i = 0; i < 3; i++){
+      if (temp_Sender_shortAddr[i] == 0xFFFE) {
+                        buttonlabels[0][i][0] = ' ';
+      } else {                        
+        buttonlabels[0][i][0] = temp_Sender_shortAddr[i] / 4096 %16 + '0';
+        if ((temp_Sender_shortAddr[i]/4096 %16) > 9){
+          buttonlabels[0][i][0] = buttonlabels[0][i][0]+7;
+        }  
+        buttonlabels[0][i][1] = temp_Sender_shortAddr[i] / 256 %16 + '0';
+        if ((temp_Sender_shortAddr[i]/256 %16) > 9){
+          buttonlabels[0][i][1] = buttonlabels[0][i][1]+7;
+        }
+        buttonlabels[0][i][2] = temp_Sender_shortAddr[i] / 16 %16 + '0';
+        if ((temp_Sender_shortAddr[i]/16 %16) > 9){
+          buttonlabels[0][i][2] = buttonlabels[0][i][2]+7;
+        }
+        buttonlabels[0][i][3] = temp_Sender_shortAddr[i] %16 + '0';
+        if ((temp_Sender_shortAddr[i] %16) > 9){
+          buttonlabels[0][i][3] = buttonlabels[0][i][3]+7;
+        }                        
+      }                    
+    }
+  }
+  if (zclApp_menu == 3){
+    if (zclApp_Config.HvacUiDisplayMode & DM_RED) {
+      buttonlabels[0][0][0] = ' ';
+    }
+    if (zclApp_Config.HvacUiDisplayMode & DM_GREEN) {
+      buttonlabels[0][1][0] = ' ';
+    }
+    if (zclApp_Config.HvacUiDisplayMode & DM_BLUE) {
+      buttonlabels[0][2][0] = ' ';
+    }     
+  }
+  if (zclApp_menu == 4){
+    if (zclApp_Config.HvacUiDisplayMode & DM_INVERT_NOT) {
+      buttonlabels[0][1][0] = ' ';
+    } else {
+      buttonlabels[0][2][0] = ' ';
+    }   
+  }
+  if (zclApp_menu == 5){
+    if (zclApp_Config.HvacUiDisplayMode & DM_ROTATE) {
+      buttonlabels[0][1][0] = ' ';
+    } else {
+      buttonlabels[0][2][0] = ' ';
+    }   
+  }
+  if (zclApp_menu == 8){
+    if (temp_Sender_shortAddr[0] == 0xFFFE && temp_Sender_shortAddr[1] == 0xFFFE && temp_Sender_shortAddr[2] == 0xFFFE) {
+      buttonlabels[0][3][0] = ' ';
+      buttonlabels[0][4][0] = ' ';
+    }  
+  }
+  if (zclApp_menu == 9){
+    if (zclApp_Config.HvacUiDisplayMode & DM_BACKLIGHT) {
+      buttonlabels[0][0][0] = ' ';
+    } else {
+      buttonlabels[0][1][0] = ' ';
+    }   
+  }
+  
+}
+
+void zclApp_keyprocessing(void) { 
             int8 butt = pressButton();
-            if (butt != -1 && buttonlabels[zclApp_menu][butt][0] != ' '){
+            //beep at press button
+            if (butt != -1 && buttonlabels[0][butt][0] != ' '){
               beeping_beep_delay(400,20);
+            } else {
+              return;
             }
             zclApp_butt = butt;
-            if ((zclApp_menu !=0 && zclApp_menu !=6 &&zclApp_menu !=7 && buttonlabels[zclApp_menu][butt][0] != ' ') || (zclApp_menu == 0 && butt == 2)){
-              uint8 n = osal_strlen(buttonlabels[zclApp_menu][zclApp_butt]);
+            //status string
+            if ((zclApp_menu !=6 && zclApp_menu !=7) || (zclApp_menu == 0 && butt == 2)){
+              uint8 n = osal_strlen(buttonlabels[0][zclApp_butt]);
               uint8 m = osal_strlen(zclApp_status_string);
               for (uint8 i=0; i < n; i++) {
-                zclApp_status_string[m+i] = buttonlabels[zclApp_menu][zclApp_butt][i];
+                zclApp_status_string[m+i] = buttonlabels[0][zclApp_butt][i];
               }
               n = osal_strlen(zclApp_status_string);
               zclApp_status_string[n] = ':';
               zclApp_status_string[n + 1] = '\0';
             }
-            if ((zclApp_menu !=0 && buttonlabels[zclApp_menu][butt][0] != ' ') || (zclApp_menu == 0 && butt == 2)){
-              drawButton(butt, 0); // update press
-            }
+            // update inverse press button
+            drawButton(butt, 0); // update press
             
             switch (zclApp_menu){
               case 0: //zclApp_menu=0
@@ -3081,10 +3271,13 @@ void zclApp_keyprocessing(void) {
                     zclApp_bh1750StartLumosity();
                     break;
                   case 2:
-                    
+                    report = 1;
+                    zclApp_scd4xReadCO2();
+                    report = 0;
                     break;
                   case 3:
-                    bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
+//                    bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
+                    zclRep_Occupancy();
                     break;
                   case 4:
                     zclApp_ConfigDisplay();
@@ -3092,37 +3285,6 @@ void zclApp_keyprocessing(void) {
                 }
                 break;
               case 8://zclApp_menu=8                
-                    for (uint8 i = 0; i < 3; i++){
-                      if (temp_Sender_shortAddr[i] == 0xFFFE) {
-                        buttonlabels[10][i][0] = ' ';
-                        buttonlabels[11][i][0] = ' ';
-                      } else {                        
-                        buttonlabels[10][i][0] = temp_Sender_shortAddr[i] / 4096 %16 + '0';
-                        buttonlabels[11][i][0] = temp_Sender_shortAddr[i] / 4096 %16 + '0';
-                        if ((temp_Sender_shortAddr[i]/4096 %16) > 9){
-                          buttonlabels[10][i][0] = buttonlabels[10][i][0]+7;
-                          buttonlabels[11][i][0] = buttonlabels[11][i][0]+7;
-                        }  
-                        buttonlabels[10][i][1] = temp_Sender_shortAddr[i] / 256 %16 + '0';
-                        buttonlabels[11][i][1] = temp_Sender_shortAddr[i] / 256 %16 + '0';
-                        if ((temp_Sender_shortAddr[i]/256 %16) > 9){
-                          buttonlabels[10][i][1] = buttonlabels[10][i][1]+7;
-                          buttonlabels[11][i][1] = buttonlabels[11][i][1]+7;
-                        }
-                        buttonlabels[10][i][2] = temp_Sender_shortAddr[i] / 16 %16 + '0';
-                        buttonlabels[11][i][2] = temp_Sender_shortAddr[i] / 16 %16 + '0';
-                        if ((temp_Sender_shortAddr[i]/16 %16) > 9){
-                          buttonlabels[10][i][2] = buttonlabels[10][i][2]+7;
-                          buttonlabels[11][i][2] = buttonlabels[11][i][2]+7;
-                        }
-                        buttonlabels[10][i][3] = temp_Sender_shortAddr[i] %16 + '0';
-                        buttonlabels[11][i][3] = temp_Sender_shortAddr[i] %16 + '0';
-                        if ((temp_Sender_shortAddr[i] %16) > 9){
-                          buttonlabels[10][i][3] = buttonlabels[10][i][3]+7;
-                          buttonlabels[11][i][3] = buttonlabels[11][i][3]+7;
-                        }
-                      }                    
-                    }
                 switch (butt){
                   case 0:
                     if (bdbAttributes.bdbNodeIsOnANetwork == 1) {
@@ -3218,8 +3380,9 @@ void zclApp_keyprocessing(void) {
                       temp_countReqBind = 0;
                       temp_bindingCount[temp_countReqBind] = 0;
                       temp_bindingStartIndex[temp_countReqBind] = 0;
-                      temp_bindClusterDev[temp_countReqBind] = 0x00;
-                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      temp_bindClusterDev[temp_countReqBind] = 0x0000;
+//                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      zclApp_RequestBind();
                       zclApp_menu = 0;
                       zclApp_create_butt_main(zclApp_menu);
 #endif                      
@@ -3231,8 +3394,9 @@ void zclApp_keyprocessing(void) {
                       temp_countReqBind = 1;
                       temp_bindingCount[temp_countReqBind] = 0;
                       temp_bindingStartIndex[temp_countReqBind] = 0;
-                      temp_bindClusterDev[temp_countReqBind] = 0x00;
-                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      temp_bindClusterDev[temp_countReqBind] = 0x0000;
+//                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      zclApp_RequestBind();
                       zclApp_menu = 0;
                       zclApp_create_butt_main(zclApp_menu);
 #endif                      
@@ -3244,8 +3408,9 @@ void zclApp_keyprocessing(void) {
                       temp_countReqBind = 2;
                       temp_bindingCount[temp_countReqBind] = 0;
                       temp_bindingStartIndex[temp_countReqBind] = 0;
-                      temp_bindClusterDev[temp_countReqBind] = 0x00;
-                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      temp_bindClusterDev[temp_countReqBind] = 0x0000;
+//                      osal_start_timerEx(zclApp_TaskID, APP_REQ_BIND_EVT, 100);
+                      zclApp_RequestBind();
                       zclApp_menu = 0;
                       zclApp_create_butt_main(zclApp_menu);
 #endif                      
@@ -3323,5 +3488,7 @@ void zclApp_TPkeyprocessing(void) {
 }
 
 #endif
+
+
 /****************************************************************************
 ****************************************************************************/

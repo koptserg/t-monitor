@@ -160,7 +160,6 @@
 
 /* clear the received and transmit byte status, write tx data to buffer, wait till transmit done */
 #define LCD_SPI_TX(x)                   { U1CSR &= ~(BV(2) | BV(1)); U1DBUF = x; /*while( !(U1CSR & BV(1)) ); */}
-#define LCD_SPI_TX_BUFF(x)              { HalUARTWrite(HAL_UART_PORT_1, &x, 1);}
 #define LCD_SPI_WAIT_RXRDY()            { while(!(U1CSR & BV(1))); }
 
 /* Control macros */
@@ -688,7 +687,6 @@ void HalLcd_HW_Control(uint8 cmd)
   LCD_SPI_BEGIN2();
   LCD_DO_CONTROL();
   LCD_SPI_TX(cmd);
-//  LCD_SPI_TX_BUFF(cmd);
   LCD_SPI_WAIT_RXRDY();
   LCD_SPI_END2();
 }
@@ -707,7 +705,6 @@ void HalLcd_HW_Write(uint8 data)
   LCD_SPI_BEGIN2();
   LCD_DO_WRITE();
   LCD_SPI_TX(data);
-//  LCD_SPI_TX_BUFF(data);
   LCD_SPI_WAIT_RXRDY();
   LCD_SPI_END2();
 }
@@ -719,13 +716,9 @@ void HalLcd_HW_Write_AllData(uint16 data, uint32 datalen)
   uint32 i;
   for(i = 0; i < datalen; i++) {
     LCD_SPI_TX(data >> 8);
-//    uint8 dh= (data >> 8);
-//    LCD_SPI_TX_BUFF(dh);
-    LCD_SPI_WAIT_RXRDY();
+//    LCD_SPI_WAIT_RXRDY();
     LCD_SPI_TX(data & 0XFF);
-//    uint8 dl= (data & 0XFF);
-//    LCD_SPI_TX_BUFF(dl);
-    LCD_SPI_WAIT_RXRDY();
+//    LCD_SPI_WAIT_RXRDY();
   }
   LCD_SPI_END2();
 }

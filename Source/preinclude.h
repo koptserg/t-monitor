@@ -37,7 +37,7 @@
 
 #define DISABLE_GREENPOWER_BASIC_PROXY
 #define BDB_FINDING_BINDING_CAPABILITY_ENABLED 1
-#define BDB_REPORTING TRUE
+//#define BDB_REPORTING TRUE
 
 #define ISR_KEYINTERRUPT
 #define HAL_BUZZER FALSE
@@ -69,6 +69,12 @@
 #error "Board type must be defined"
 #endif
 
+/*
+Your JOB: Set this value according to your application
+Max num of cluster with reportable attributes in any endpoint  
+(eg. 2 endpoints with same cluster with reportable attributes counts as 2, 
+regardless of the number of reportable attributes in the cluster)
+*/
 #define BDB_MAX_CLUSTERENDPOINTS_REPORTING 10
 
 #if defined(HAL_BOARD_MONITOR)

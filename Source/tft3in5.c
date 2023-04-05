@@ -21,12 +21,12 @@ static void LCD_SetGramScanWay(LCD_SCAN_DIR Scan_dir);
 
 static void LCD_WriteReg(uint8 Reg);
 static void LCD_WriteData(uint8 Data);
-static void LCD_Write_AllData(uint16 Data, uint32 DataLen);
+//static void LCD_Write_AllData(uint16 Data, uint32 DataLen);
 static void LCD_Reset(void);
 static void LCD_InitReg(void);
 
 static void LCD_SetWindow(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend);
-static void LCD_SetCursor(POINT Xpoint, POINT Ypoint);
+//static void LCD_SetCursor(POINT Xpoint, POINT Ypoint);
 static void LCD_SetColor(COLOR Color ,POINT Xpoint, POINT Ypoint);
 
 /*******************************************************************************
@@ -61,11 +61,12 @@ static void LCD_WriteData(uint8 Data)
 function:
 		Write register data
 *******************************************************************************/
+/*
 static void LCD_Write_AllData(uint16 Data, uint32 DataLen)
 {
   HalLcd_HW_Write_AllData(Data, DataLen);
 }
-
+*/
 /*******************************************************************************
 function:
 		Common register initialization
@@ -300,7 +301,6 @@ static void LCD_SetWindow(POINT Xstart, POINT Ystart,	POINT Xend, POINT Yend)
     LCD_WriteData(Xstart & 0xff);	 				//Set the horizontal starting point to the low octet
     LCD_WriteData((Xend - 1) >> 8);	//Set the horizontal end to the high octet
     LCD_WriteData((Xend - 1) & 0xff);	//Set the horizontal end to the low octet
-
     //set the Y coordinates
     LCD_WriteReg(0x2B);
     LCD_WriteData(Ystart >> 8);
@@ -316,11 +316,12 @@ parameter:
 	xStart :   X direction Start coordinates
 	xEnd   :   X direction end coordinates
 ********************************************************************************/
+/*
 static void LCD_SetCursor(POINT Xpoint, POINT Ypoint)
 {
     LCD_SetWindow(Xpoint, Ypoint, Xpoint, Ypoint);
 }
-
+*/
 /********************************************************************************
 function:	Set show color
 parameter:
@@ -329,7 +330,8 @@ parameter:
 //static void LCD_SetColor(LENGTH Dis_Width, LENGTH Dis_Height, COLOR Color ){
 static void LCD_SetColor(COLOR Color , POINT Xpoint, POINT Ypoint)
 {
-    LCD_Write_AllData(Color , (uint32_t)Xpoint * (uint32_t)Ypoint);
+//    LCD_Write_AllData(Color , (uint32_t)Xpoint * (uint32_t)Ypoint);
+  HalLcd_HW_Write_AllData(Color, (uint32_t)Xpoint * (uint32_t)Ypoint);
 }
 
 /********************************************************************************
@@ -342,7 +344,8 @@ parameter:
 void LCD_SetPointlColor( POINT Xpoint, POINT Ypoint, COLOR Color)
 {
     if ((Xpoint <= sLCD_DIS.LCD_Dis_Column) && (Ypoint <= sLCD_DIS.LCD_Dis_Page)) {
-        LCD_SetCursor (Xpoint, Ypoint);
+//        LCD_SetCursor (Xpoint, Ypoint);
+        LCD_SetWindow(Xpoint, Ypoint, Xpoint, Ypoint);
         LCD_SetColor(Color, 1, 1);
     }
 }
