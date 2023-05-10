@@ -151,11 +151,11 @@
                 <option>
                     <name>Output variant</name>
                     <version>2</version>
-                    <state>6</state>
+                    <state>3</state>
                 </option>
                 <option>
                     <name>Output description</name>
-                    <state>No float, no field width, no precision.</state>
+                    <state>Full formatting.</state>
                 </option>
                 <option>
                     <name>GeneralEnableMisra</name>
