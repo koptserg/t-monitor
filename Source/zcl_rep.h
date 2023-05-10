@@ -9,7 +9,7 @@ extern void zclRep_ConfigDisplay(void);
 extern void zclRep_LocalTime(void);
 extern void zclRep_Occupancy(void);
 extern void zclRep_IlluminanceReport(void);
-
+extern void zclRep_BatteryReport(void);
 
 #endif /* ZCL_REP_H */
 

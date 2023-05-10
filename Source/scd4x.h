@@ -119,6 +119,4 @@ extern bool SCD4x_readRegister(uint16_t registerAddress, uint16_t *response, uin
 
 extern uint8_t SCD4x_computeCRC8(uint8 *data, uint8_t len);
 
-extern int8 scd41_performForcedRecalibration(uint16 targetCo2Concentration, uint16* frcCorrection);
-
 #endif

@@ -29,7 +29,7 @@ extern "C" {
 #define APP_EPD_DELAY_EVT               0x0100
 #endif //EPD3IN7
 #if defined(TFT3IN5)
-//#define APP_REPORT_CONFIG_DISPLAY_EVT   0x0100
+#define APP_TFT_STATUS_STR_DELAY_EVT    0x0100
 #endif //TFT3IN5
 #define APP_BH1750_DELAY_EVT            0x0200
 #define APP_REPORT_TEMPERATURE_EVT      0x0400
@@ -38,6 +38,9 @@ extern "C" {
 #define APP_REPORT_ILLUMINANCE_EVT      0x2000
 #define APP_REPORT_BATTERY_EVT          0x4000
 #define APP_REPORT_CO2_EVT              0x0010
+   
+// Application Events
+#define APP2_REPORT_EVT                  0x0001
 
 /*********************************************************************
  * MACROS
@@ -222,11 +225,13 @@ extern void TftUpdateRefresh(void);
  * Initialization for the task
  */
 extern void zclApp_Init(byte task_id);
+extern void zclApp_Init_2(byte task_id);
 
 /*
  *  Event Process for the task
  */
 extern UINT16 zclApp_event_loop(byte task_id, UINT16 events);
+extern UINT16 zclApp_event_loop_2(byte task_id, UINT16 events);
 
 //void user_delay_ms(uint32_t period);
 

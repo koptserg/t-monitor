@@ -96,7 +96,9 @@ uint16 breakout_event_loop(uint8 task_id, uint16 events) {
             play();
           } else {
             s_play = 0;
+#ifdef HAL_LCD_PWM_PORT0            
             beeping_stop_beep();
+#endif
             gamerun();
             initButton(1, 260, 370, 90, 50,  WHITE, PURPLE,  WHITE, "Fire", 2); 
             drawButton(1, 0);
@@ -145,7 +147,9 @@ void breakout_keyprocessing(void)
                 butt_pause = 0;
                 initButton(1, 260, 370, 90, 50,  WHITE, PURPLE,  WHITE, "Pause", 2); 
                 drawButton(1, 0);
+#ifdef HAL_LCD_PWM_PORT0
                 beeping_seq_stop();
+#endif
               }
 
             }
@@ -496,8 +500,9 @@ void scorenextLevel(void)
 
       LCD_SetArealColorWH((19-nDigits(level))*14, 4, 14*nDigits(level), 19, SCOREBOARD_COLOR);
       GUI_DisNum((19-nDigits(level))*14, 4, level, &Font20, SCOREBOARD_COLOR, RED);
-
-      beeping_seq_start(1);      
+#ifdef HAL_LCD_PWM_PORT0
+      beeping_seq_start(1);
+#endif      
 }
 
 void scoredied(void)
@@ -506,8 +511,9 @@ void scoredied(void)
       if ( lives == 0) {
         GUI_DisString_EN(100, 110, "GAME OVER", &Font24, LCD_BACKGROUND, YELLOW);
         game_over = 1;
-        
+#ifdef HAL_LCD_PWM_PORT0        
         beeping_seq_start(2);
+#endif
       }
       LCD_SetArealColorWH((22-nDigits(lives))*14, 4, 14*nDigits(lives), 19, SCOREBOARD_COLOR);
       GUI_DisNum((22-nDigits(lives))*14, 4, lives, &Font20, SCOREBOARD_COLOR, RED);
@@ -543,7 +549,9 @@ void play(void)
           if (collision()) // rebound from a paddle
           {
             beep_f = 200;
+#ifdef HAL_LCD_PWM_PORT0
             beeping_beep(400,30);
+#endif
           }
         
           // check collision w/ tiles        

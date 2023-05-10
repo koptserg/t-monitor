@@ -7,7 +7,7 @@
 #define LOW_Speed_Show 0
 #define HIGH_Speed_Show 1
 
-#define BUTTON_COUNT_MAX  6
+#define BUTTON_COUNT_MAX  21
 
 /********************************************************************************
 function:
@@ -79,9 +79,9 @@ typedef struct {
   uint16 fillcolor;
   uint16 textcolor;
   uint8 textsize;
-  char label[9];
+  char label[6];
 } BUTTON;
-static BUTTON sButton[6];
+static BUTTON sButton[21];
 
 /********************************************************************************
 function:
@@ -190,4 +190,5 @@ void initButtonUL(uint8 i,
  char *label, uint8 textsize);
 void drawButton(uint8 i, bool inverted);
 int8 pressButton(void);
+void getButtonLabel(uint8 i, char *label);
 #endif

@@ -11,10 +11,6 @@
 #define TP_PRESSED              0x40
 
 extern bool xpt2046_mode;
-
-extern void xpt2046_Init(uint8 task_id);
-extern uint16 xpt2046_event_loop(uint8 task_id, uint16 events);
-extern void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode);
 	
 //Touch screen structure
 typedef struct {
@@ -41,13 +37,19 @@ typedef struct{
 	DOT_PIXEL DotPixel; 
 }TP_DRAW;
 
-extern uint8 TP_Scan(uint8 chCoordType);
+//extern uint8 TP_Scan(uint8 chCoordType);
 
 extern void TP_GetAdFac(void);
+extern void TP_GetAdFac2(void);
 
 extern void TP_DrawBoard(void);
 extern void TP_Init( LCD_SCAN_DIR Lcd_ScanDir );
-extern uint8 TP_Scan(uint8 chCoordType);
+
+extern void xpt2046_Init(uint8 task_id);
+extern uint16 xpt2046_event_loop(uint8 task_id, uint16 events);
+extern void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode);
+
+extern void TP_Adjust(void);
 
 #endif /* XPT2046_H */
 

@@ -106,18 +106,15 @@ bool SCD4x_stopPeriodicMeasurement(uint16_t delayMillis)
 
 static void delayUs(uint16 microSecs) {
   while(microSecs--) {
-    /* 32 NOPs == 1 usecs */
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop");
+    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
   }
 }
 
-static void delay(uint32 period) { delayUs(period * 1000); }
+static void delay(uint32 milliSecs) {
+  while(milliSecs--) {
+    delayUs(1000);
+  }
+}
 
 //Get 9 bytes from SCD4x. See 3.5.2
 //Updates global variables with floats
@@ -707,8 +704,8 @@ bool SCD4x_performForcedRecalibrationArg(uint16_t concentration, float *correcti
     uint8 incomingCrc = data[2];
     uint8_t foundCrc = SCD4x_computeCRC8(bytesToCrc, 2);
     
-//  *correction = ((float)correctionWord) - 32768; // FRC correction [ppm CO2] = word[0] – 0x8000
-  *correction = data[0] << 8 | data[1];
+  *correction = ((float)correctionWord) - 32768; // FRC correction [ppm CO2] = word[0] – 0x8000
+//  *correction = data[0] << 8 | data[1];
   if (correctionWord == 0xffff) //A return value of 0xffff indicates that the forced recalibration has failed
     return (false);
 
@@ -725,32 +722,4 @@ bool SCD4x_performForcedRecalibrationArg(uint16_t concentration, float *correcti
   return (true);
 }
 
-int8 scd41_performForcedRecalibration(uint16 targetCo2Concentration, uint16* frcCorrection) {
-  int8  error;
-  uint16 command = 0x2F36;
-  uint8 bufferCRCtemp[2];
-  bufferCRCtemp[0] = (uint8)(( targetCo2Concentration & 0xFF00) >> 8);
-  bufferCRCtemp[1] = (uint8)(( targetCo2Concentration & 0x00FF) >> 0);
-  uint8 crc = SCD4x_computeCRC8(bufferCRCtemp, 2);
-  uint8 bufferTargetCo2Concentration[5];
-  bufferTargetCo2Concentration[1] = (uint8)((command & 0xFF00) >> 8);
-  bufferTargetCo2Concentration[0] = (uint8)((command & 0x00FF) >> 0);
-  bufferTargetCo2Concentration[2] = bufferCRCtemp[0];
-  bufferTargetCo2Concentration[3] = bufferCRCtemp[1];
-  bufferTargetCo2Concentration[4] = crc;
-  error = HalI2CSend(SCD4x_ADDRESS_WRITE, bufferTargetCo2Concentration, 5); 
-  if (error) {
-        return error;
-    }
-  
-  delay(400);
-  
-  uint8 bufferFRC[2] = {0};
-
-  error = HalI2CReceive(SCD4x_ADDRESS_READ, bufferFRC, 2); 
-  uint16 frcCorrectionTemp = bufferFRC[0] << 8 | bufferFRC[1];
-  *frcCorrection = frcCorrectionTemp;
-  
-  return error;
-}
 

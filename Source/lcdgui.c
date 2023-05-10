@@ -776,8 +776,15 @@ void initButtonUL(uint8 i,
   sButton[i].fillcolor    = fill;
   sButton[i].textcolor    = textcolor;
   sButton[i].textsize     = textsize;
-  for (uint8 x=0; x<9; x++) {
+  for (uint8 x=0; x<6; x++) {
     sButton[i].label[x]     = label[x];
+  }
+}
+
+void getButtonLabel(uint8 i, char *label)
+{
+  for (uint8 x=0; x<6; x++) {
+    label[x] = sButton[i].label[x];
   }
 }
 

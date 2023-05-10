@@ -73,6 +73,7 @@ function:
 *******************************************************************************/
 static void LCD_InitReg(void)
 {
+
     LCD_WriteReg(0XF9);
     LCD_WriteData(0x00);
     LCD_WriteData(0x08);
@@ -174,7 +175,11 @@ static void LCD_InitReg(void)
     LCD_WriteData(0x04);
 
     LCD_WriteReg(0X3A);	//Set Interface Pixel Format
+#ifdef HAL_LCD_RGB_18BIT
+    LCD_WriteData(0x66);
+#else
     LCD_WriteData(0x55);
+#endif    
 
 }
 
@@ -255,8 +260,6 @@ void LCD_Init(LCD_SCAN_DIR LCD_ScanDir, uint16 LCD_BLval)
     //Hardware reset
     LCD_Reset();
     
-//    if(LCD_BLval > 255)
-//        LCD_BLval = 255;
     LCD_SetBackLight(LCD_BLval);
     
     //Set the initialization register

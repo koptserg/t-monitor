@@ -1,4 +1,7 @@
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "AF.h"
 #include "OSAL.h"
 #include "OSAL_Clock.h"
@@ -38,7 +41,6 @@
 
 #include "bme280spi.h"
 #include "bh1750.h"
-//#include "scd40.h"
 #include "scd4x.h"
 #include "battery.h"
 #include "commissioning.h"
@@ -102,6 +104,7 @@
 
 extern bool requestNewTrustCenterLinkKey;
 byte zclApp_TaskID;
+byte zclApp_TaskID_2;
 
 /*********************************************************************
  * GLOBAL FUNCTIONS
@@ -112,6 +115,8 @@ byte zclApp_TaskID;
  */
 
 static uint8 currentSensorsReadingPhase = 0;
+
+bool zclApp_parent_lost = 1;
 
 uint8 report = 0;
 uint8 power = 0;
@@ -175,6 +180,8 @@ const uint16 color_scheme[3][8] = {BLUE0,    BLUE1,    BLUE2,    BLUE3,    BLUE4
                                    GREEN_0,  GREEN_1,  GREEN_2,  GREEN_3,  GREEN_4,  GREEN_5,  RED_1,   RED_2};
 uint8 scheme = 1;
 uint8 zclApp_menu = 0;
+static char zclApp_status_string[25] = "";
+static uint8 zclApp_butt = 0;
 #endif //TFT3IN5
 
 //#define BUTTON_COUNT_MAX  4
@@ -205,6 +212,7 @@ static void zclApp_bh1750setMTreg(void);
 static void zclApp_MotionPullUpDown(void);
 static void zclApp_ConfigDisplay(void);
 static void zclApp_scd4xReadCO2(void);
+static void zclApp_ReadBattery(void);
 
 #if defined(EPD3IN7)
 static void zclApp_EpdUpdateClock(void);
@@ -246,6 +254,7 @@ static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit);
 static void zclApp_keyprocessing(void);
 static void zclApp_create_butt_main(uint8 block);
 static void zclApp_automenu(void);
+static void zclApp_TftMessageLine(const char * pString);
 #if defined(HAL_LCD_PWM_PORT1)
 static void InitLedPWM(uint8 level);
 #endif
@@ -416,7 +425,6 @@ void zclApp_Init(byte task_id) {
 //  TP_GetAdFac(); // default calibration factor
 
   TftUpdateRefresh();
-
 #endif    
 #if defined(EPD3IN7)
   // check epd
@@ -460,6 +468,10 @@ void zclApp_Init(byte task_id) {
 #endif  
     zclApp_StartReloadTimer();
     osal_start_reload_timer(zclApp_TaskID, APP_REPORT_CLOCK_EVT, 60000);
+}
+
+void zclApp_Init_2(byte task_id) {
+  zclApp_TaskID_2 = task_id;
 }
 
 #ifdef MT_ZDO_MGMT
@@ -511,9 +523,6 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
           LREP("%d %X %X %X\r\n", bdev, BindRsp->list[x].clusterID, sAd, BindRsp->list[x].dstAddr.addr.shortAddr);
           
           if (BindRsp->list[x].dstAddr.addr.shortAddr == zlcApp_ExtAddr) {
-            // enable/disable display of values
-            // bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
-            //     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
             switch (BindRsp->list[x].clusterID){
               case POWER_CFG:
                 temp_bindClusterDev[bdev] |= CB_POWER_CFG;
@@ -569,9 +578,7 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
 #endif
 #if defined(TFT3IN5)
 //          TftRefresh();
-          if (!zcl_game){
             TfttestRefresh(bdev);
-          }
 #endif          
         }        
         osal_mem_free(BindRsp);
@@ -622,9 +629,7 @@ void zclApp_ProcessZDOMsgs(zdoIncomingMsg_t *InMsg){
 #endif
 #if defined(TFT3IN5)      
 //      TftRefresh();
-      if (!zcl_game){
         TftLqi(temp_countReqLqi);
-      }
 #endif      
       if (temp_countReqLqi >=2){
         temp_countReqLqi = 0;
@@ -691,9 +696,7 @@ void zclApp_RequestBind(void){
       if (temp_Sender_shortAddr[temp_countReqBind] != 0xFFFE) {
         temp_bindClusterDev[temp_countReqBind] &= ~CB_TABLE;
 #if defined(TFT3IN5)
-        if (!zcl_game){
           TftBindStatus(temp_countReqBind);
-        }
 #endif  
         destAddr.addr.shortAddr = temp_Sender_shortAddr[temp_countReqBind];      
         startIndex = temp_bindingStartIndex[temp_countReqBind];
@@ -731,10 +734,7 @@ static void zclApp_EpdUpdateClock(void) {
 }
 #endif
 
-uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
-  
-//  TP_DrawBoard();
-  
+uint16 zclApp_event_loop(uint8 task_id, uint16 events) {  
     afIncomingMSGPacket_t *MSGpkt;
     devStates_t zclApp_NwkState; //---
     
@@ -755,23 +755,31 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
                 break;
             case ZDO_STATE_CHANGE: //devStates_t ZDApp.h             
                 zclApp_NwkState = (devStates_t)(MSGpkt->hdr.status);
-                LREP("NwkState=%d\r\n", zclApp_NwkState);
-                if (zclApp_NwkState == DEV_END_DEVICE) {
-#ifdef LQI_REQ                  
-//                  temp_LqiStartIndex[0] = 0;
-//                  temp_lqi[0] = 255;
+                LREP("NwkState=%d\r\n", zclApp_NwkState);                
+                if (zclApp_NwkState == DEV_NWK_JOINING) {
+#if defined(TFT3IN5)
+                  zclApp_TftMessageLine("Joining a PAN...");
+#endif //  TFT3IN5 
+                }
+                if (zclApp_NwkState == DEV_NWK_ORPHAN) {
+                  zclApp_parent_lost = 1;
 #if defined(EPD3IN7)                  
                   EpdRefresh();
-//                  EpdStatus(0); // status network device
-//                  EpdStatus(0); // status network device
+#endif //  EPD3IN7                   
+#if defined(TFT3IN5)
+                  TftStatus(0); // update status network device
+                  zclApp_TftMessageLine("Parent lost");
+#endif //  TFT3IN5                  
+                }               
+                if (zclApp_NwkState == DEV_END_DEVICE) {
+                  zclApp_parent_lost = 0;                  
+#if defined(EPD3IN7)                  
+                  EpdRefresh();
 #endif //  EPD3IN7 
 #if defined(TFT3IN5)                  
-//                  TftRefresh();
-                  if (!zcl_game){
                     TftStatus(0); // update status network device
-                  }
+                    zclApp_TftMessageLine("Device on the network");
 #endif //  TFT3IN5                  
-#endif // LQI_REQ
                   IEN2 |= HAL_KEY_BIT4; // enable port1 int
                   P1DIR |=  BV(0); // P1_0 output
                   P1 |=  BV(0);   // power on DD
@@ -798,15 +806,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         // return unprocessed events
         return (events ^ SYS_EVENT_MSG);
     }
-#ifdef BIND_REQ 
-/*    
-    if (events & APP_REQ_BIND_EVT) {
-        LREPMaster("APP_REQ_BIND_EVT\r\n");
-        zclApp_RequestBind();
-        return (events ^ APP_REQ_BIND_EVT);
-    }
-*/
-#endif 
+    
     if (events & APP_REPORT_CLOCK_EVT) {
       LREPMaster("APP_REPORT_CLOCK_EVT\r\n");
       
@@ -858,9 +858,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
 #endif // EPD3IN7
 #if defined(TFT3IN5)        
 //        TftRefresh();
-        if (!zcl_game && zclApp_menu == 0){
           TftTimeDateWeek(); // update time, date, weekday
-        }
 #endif        
 //      }
         return (events ^ APP_REPORT_CLOCK_EVT);
@@ -909,7 +907,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
     if (events & APP_REPORT_BATTERY_EVT) {
         LREPMaster("APP_REPORT_BATTERY_EVT\r\n");
         report = 0;
-        zclBattery_Report();
+        zclApp_ReadBattery();
 
         return (events ^ APP_REPORT_BATTERY_EVT);
     }
@@ -975,6 +973,15 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         return (events ^ APP_EPD_DELAY_EVT);
     }
 #endif // EPD3IN7
+#if defined(TFT3IN5)
+    if (events & APP_TFT_STATUS_STR_DELAY_EVT) {
+        LREPMaster("APP_TFT_STATUS_STR_DELAY_EVT\r\n");
+        LCD_SetArealColor(32, 0, 320, 16, zclApp_lcd_background);
+        GUI_DisString_EN(32, 0, zclApp_status_string, &Font16, zclApp_lcd_background, WHITE);
+                
+        return (events ^ APP_TFT_STATUS_STR_DELAY_EVT);
+    }
+#endif // TFT3IN5
     if (events & APP_BH1750_DELAY_EVT) {
         LREPMaster("APP_BH1750_DELAY_EVT\r\n");
         zclApp_bh1750ReadLumosity();
@@ -990,6 +997,16 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
     }
 
     // Discard unknown events
+    return 0;
+}
+
+uint16 zclApp_event_loop_2(uint8 task_id, uint16 events) {
+    if (events & APP2_REPORT_EVT) {
+        LREPMaster("APP2_REPORT_EVT\r\n");
+        
+        return (events ^ APP2_REPORT_EVT);
+    }
+    
     return 0;
 }
 
@@ -1064,7 +1081,7 @@ static void zclApp_ReadSensors(void) {
     switch (currentSensorsReadingPhase++) {
     case 0:
 //        HalLedSet(HAL_LED_1, HAL_LED_MODE_BLINK);    
-      zclBattery_Report();      
+      zclApp_ReadBattery();      
         break;
     case 4:
       if (scd4xDetect == 1) {
@@ -1127,10 +1144,8 @@ static void zclApp_ReadSensors(void) {
 }
 
 static void zclApp_scd4xReadCO2(void) {
-//        LCD_SetArealColorWH(100, 0, 200, 16, WHITE);        
+  
         uint16 scd4x_co2_16 = (uint32)SCD4x_getCO2();
-//        GUI_DisNumDP(100, 0, scd4x_co2_16, 0, &Font16, WHITE, BLACK );
-//        GUI_DisNumDP(150, 0, old_scd4xCO2_Sensor_MeasuredValue, 0, &Font16, WHITE, BLACK );
         
         float scd4x_co2 = (float)SCD4x_getCO2()/ 1000000.0;
         zclApp_scd4xCO2Sensor_MeasuredValue = scd4x_co2;
@@ -1144,7 +1159,15 @@ static void zclApp_scd4xReadCO2(void) {
         if (co2 > zclApp_Config.CO2MinAbsoluteChange || report == 1){ // 100 
           old_scd4xCO2_Sensor_MeasuredValue = scd4x_co2_16;         
           zclRep_CO2Report();
-        } 
+        }
+
+}
+
+static void zclApp_ReadBattery(void) {
+  uint16 millivolts = getBatteryVoltage();
+  zclApp_BatteryVoltage = getBatteryVoltageZCL(millivolts);
+  zclApp_BatteryPercentageRemainig = getBatteryRemainingPercentageZCLCR2032(millivolts);
+  zclRep_BatteryReport();
 }
 
 static void zclApp_ConfigDisplay(void) {
@@ -1274,34 +1297,45 @@ static ZStatus_t zclApp_ReadWriteAuthCB(afAddrType_t *srcAddr, zclAttrRec_t *pAt
 }
 
 static void zclApp_SaveAttributesToNV(void) {
-    uint8 writeStatus = osal_nv_write(NW_APP_CONFIG, 0, sizeof(application_config_t), &zclApp_Config);
-    LREP("Saving attributes to NV write=%d\r\n", writeStatus);
-    
-    zclApp_GenTime_old = zclApp_GenTime_TimeUTC;    
-    osal_setClock(zclApp_GenTime_TimeUTC);
-    
-    if(scd4xDetect == 1 && zclApp_scd4xCO2Sensor_ForcedRecalibration == 1){
-      float *correction = 0;
-      SCD4x_performForcedRecalibrationArg(0x01e0, correction);
-      zclApp_scd4xCO2Sensor_ForcedRecalibration = 0;
-    }
-    
-#if defined(EPD3IN7)     
-//    zclApp_EpdUpdateClock();  
-//    EpdTimeDateWeek(); // update time, date, weekday
-//    EpdTimeDateWeek(); // update time, date, weekday
-    EpdRefresh();
-#endif // EPD3IN7
-#if defined(TFT3IN5)    
-    if (!zcl_game){
-//      TftTimeDateWeek(); // time, date, weekday
-      TftUpdateRefresh();
-    }
+    application_config_t Temp_Config;
+    osal_nv_read(NW_APP_CONFIG, 0, sizeof(application_config_t), &Temp_Config);
+    if (memcmp(&Temp_Config, &zclApp_Config, sizeof(application_config_t)) != 0) {
+      uint8 writeStatus = osal_nv_write(NW_APP_CONFIG, 0, sizeof(application_config_t), &zclApp_Config);
+      LREP("Saving attributes to NV write=%d\r\n", writeStatus); 
+      if (Temp_Config.HvacUiDisplayMode != zclApp_Config.HvacUiDisplayMode) {
+#if defined(TFT3IN5)
+        TftUpdateRefresh();
 #endif // TFT3IN5
-    zclApp_bh1750setMTreg();
-    zclApp_StopReloadTimer();
-    zclApp_StartReloadTimer();
+#if defined(EPD3IN7)     
+        EpdRefresh();
+#endif // EPD3IN7
+      }
+#if defined(TFT3IN5)      
+        zclApp_TftMessageLine("Save attributes");
+#endif // TFT3IN5 
+      if (Temp_Config.MsIlluminanceLevelSensingSensitivity != zclApp_Config.MsIlluminanceLevelSensingSensitivity) {
+        zclApp_bh1750setMTreg();
+      }
+      zclApp_StopReloadTimer();
+      zclApp_StartReloadTimer();
+    } else {    
+      zclApp_GenTime_old = zclApp_GenTime_TimeUTC;    
+      osal_setClock(zclApp_GenTime_TimeUTC);    
+      if(scd4xDetect == 1 && zclApp_scd4xCO2Sensor_ForcedRecalibration == 1){
+        float *correction = 0;
+        SCD4x_performForcedRecalibrationArg(0x01e0, correction);
+        zclApp_scd4xCO2Sensor_ForcedRecalibration = 0;
+      }
+    }
 }
+
+#if defined(TFT3IN5)
+static void zclApp_TftMessageLine(const char * pString) {
+  LCD_SetArealColor(32, 0, 320, 16, zclApp_lcd_background);
+  GUI_DisString_EN(32, 0, pString, &Font16, zclApp_lcd_background, WHITE);
+  osal_start_timerEx(zclApp_TaskID, APP_TFT_STATUS_STR_DELAY_EVT, 2000);
+}  
+#endif // TFT3IN5
 
 static void zclApp_StopReloadTimer(void) {
     osal_stop_timerEx(zclApp_TaskID, APP_REPORT_BATTERY_EVT);
@@ -1414,56 +1448,58 @@ static void _delay_ms(uint16 milliSecs)
 
 #if defined(TFT3IN5)
 static void TftTimeDateWeek(void){
-  // clock init Firmware build date 20/08/2021 13:47
-  // Update RTC and get new clock values
-  osalTimeUpdate();
-  UTCTimeStruct time;
-  osal_ConvertUTCTime(&time, osal_getClock());
-  uint16 foreground = WHITE;
+  if (!zcl_game && zclApp_menu == 0){
+    // clock init Firmware build date 20/08/2021 13:47
+    // Update RTC and get new clock values
+    osalTimeUpdate();
+    UTCTimeStruct time;
+    osal_ConvertUTCTime(&time, osal_getClock());
+    uint16 foreground = WHITE;
 
-  char time_string[] = {'0', '0', ':', '0', '0', '\0'};
-  time_string[0] = time.hour / 10 % 10 + '0';
-  time_string[1] = time.hour % 10 + '0';
-  time_string[3] = time.minutes / 10 % 10 + '0';
-  time_string[4] = time.minutes % 10 + '0';
+    char time_string[] = {'0', '0', ':', '0', '0', '\0'};
+    time_string[0] = time.hour / 10 % 10 + '0';
+    time_string[1] = time.hour % 10 + '0';
+    time_string[3] = time.minutes / 10 % 10 + '0';
+    time_string[4] = time.minutes % 10 + '0';
 
-  GUI_DrawRectangle(100, 16, 220, 64, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
-  GUI_DisString_EN(100, 16, time_string, &Font48, zclApp_lcd_background, foreground);
+    GUI_DrawRectangle(100, 16, 220, 64, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+    GUI_DisString_EN(100, 16, time_string, &Font48, zclApp_lcd_background, foreground);
   
-  // covert UTCTimeStruct date and month to display
-  time.day = time.day + 1;
-  time.month = time.month + 1;  
-  char date_string[] = {'0', '0', '.', '0', '0', '.', '0', '0', '\0'};
-  date_string[0] = time.day /10 % 10  + '0';
-  date_string[1] = time.day % 10 + '0';
-  date_string[3] = time.month / 10 % 10 + '0';
-  date_string[4] = time.month % 10 + '0';
-  date_string[6] = time.year / 10 % 10 + '0';
-  date_string[7] = time.year % 10 + '0';
+    // covert UTCTimeStruct date and month to display
+    time.day = time.day + 1;
+    time.month = time.month + 1;  
+    char date_string[] = {'0', '0', '.', '0', '0', '.', '0', '0', '\0'};
+    date_string[0] = time.day /10 % 10  + '0';
+    date_string[1] = time.day % 10 + '0';
+    date_string[3] = time.month / 10 % 10 + '0';
+    date_string[4] = time.month % 10 + '0';
+    date_string[6] = time.year / 10 % 10 + '0';
+    date_string[7] = time.year % 10 + '0';
 
-  GUI_DrawRectangle(116, 64, 212, 80, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
-  GUI_DisString_EN(116, 64, date_string, &Font16, zclApp_lcd_background, foreground);
+    GUI_DrawRectangle(116, 64, 212, 80, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+    GUI_DisString_EN(116, 64, date_string, &Font16, zclApp_lcd_background, foreground);
 
-  uint8 day_week = (uint16)floor((float)(zclApp_GenTime_TimeUTC/86400)) % 7;
-  char* day_string = "";
-  if (day_week == 5) {
-    day_string = "Thursday";
-  } else if (day_week == 6) {
-    day_string = " Friday ";
-  } else if (day_week == 0) {
-    day_string = "Saturday";
-  } else if (day_week == 1) {
-    day_string = " Sunday";
-  } else if (day_week == 2) {
-    day_string = " Monday";
-  } else if (day_week == 3) {
-    day_string = "Tuesday";
-  } else if (day_week == 4) {
-    day_string = "Wednesday";
+    uint8 day_week = (uint16)floor((float)(zclApp_GenTime_TimeUTC/86400)) % 7;
+    char* day_string = "";
+    if (day_week == 5) {
+      day_string = "Thursday";
+    } else if (day_week == 6) {
+      day_string = " Friday ";
+    } else if (day_week == 0) {
+      day_string = "Saturday";
+    } else if (day_week == 1) {
+      day_string = " Sunday";
+    } else if (day_week == 2) {
+      day_string = " Monday";
+    } else if (day_week == 3) {
+      day_string = "Tuesday";
+    } else if (day_week == 4) {
+      day_string = "Wednesday";
+    }
+  
+    GUI_DrawRectangle(116, 80, 224, 96, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+    GUI_DisString_EN(116, 80, day_string, &Font16, zclApp_lcd_background, foreground);
   }
-  
-  GUI_DrawRectangle(116, 80, 224, 96, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
-  GUI_DisString_EN(116, 80, day_string, &Font16, zclApp_lcd_background, foreground);
 }
 #endif
 
@@ -1568,16 +1604,18 @@ static void EpdTimeDateWeek(void){
 
 #if defined(TFT3IN5)
 static void TftStatus(uint8 temp_s){
-  uint8 row = temp_s *120;
-  
-  //status network
-  if ( bdbAttributes.bdbNodeIsOnANetwork ){
+  if (!zcl_game && zclApp_menu < 16){
+    uint8 row = temp_s *120;  
+    //status network
+//    if ( bdbAttributes.bdbNodeIsOnANetwork ){
+    if ( !zclApp_parent_lost ){
       GUI_DrawRectangle(8, 8, 24, 24, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
       GUI_Disbitmap(8, 8 + row , IMAGE_ONNETWORK, 16, 16, BLUE, 0);
-  } else {
+    } else {
       GUI_DrawRectangle(8, 8, 24, 24, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
       GUI_Disbitmap(8, 8 + row , IMAGE_OFFNETWORK, 16, 16, BLUE, 0);
-  } 
+    } 
+  }
 }
 #endif
 
@@ -1633,25 +1671,27 @@ static void EpdStatus(uint8 temp_s){
 
 #if defined(TFT3IN5)
 static void TftBindStatus(uint8 temp_s){
+  if (!zcl_game && zclApp_menu < 16){
     //status bind
-  uint8 row = 0;
-  uint8 col = 0;
-  char* bind_string = " ";
-  uint16 foreground = WHITE;
+    uint8 row = 0;
+    uint8 col = 0;
+    char* bind_string = " ";
+    uint16 foreground = WHITE;
   
-  if(temp_bindClusterDev[temp_s] & CB_TABLE) {
-    bind_string = "B";
-  }
+    if(temp_bindClusterDev[temp_s] & CB_TABLE) {
+      bind_string = "B";
+    }
 
-  if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ // portrait
-    row = temp_s *120;
-    col = 0;  
-  } else { // landscape    
-    row = 0;
-    col = temp_s *106;
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ // portrait
+      row = temp_s *120;
+      col = 0;  
+    } else { // landscape    
+      row = 0;
+      col = temp_s *106;
+    }
+    GUI_DrawRectangle(8 + col, 120 + row, 16 + col, 120 + row + 16, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+    GUI_DisString_EN(8 + col, 120 + row, bind_string, &Font16, zclApp_lcd_background, foreground);
   }
-  GUI_DrawRectangle(8 + col, 120 + row, 16 + col, 120 + row + 16, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
-  GUI_DisString_EN(8 + col, 120 + row, bind_string, &Font16, zclApp_lcd_background, foreground);
 }
 #endif
 
@@ -1685,9 +1725,11 @@ static void EpdBindStatus(uint8 temp_s){
 
 #if defined(TFT3IN5)
 static void TftLqi(uint8 temp_l){
-#ifdef LQI_REQ  
-  // LQI
-  TftWidgetMeasuredValue(temp_l, CB_LQI); //0x00 LQI
+#ifdef LQI_REQ 
+  if (!zcl_game && zclApp_menu < 16){
+    // LQI
+    TftWidgetMeasuredValue(temp_l, CB_LQI); //0x00 LQI
+  }
 #endif  //LQI_REQ
 }
 #endif  // TFT3IN5
@@ -1777,7 +1819,8 @@ static void EpdLqi(uint8 temp_l){
 #endif  // EPD3IN7
 
 #if defined(TFT3IN5)
-static void TftNwk(uint8 temp_n){  
+static void TftNwk(uint8 temp_n){ 
+  if (!zcl_game && zclApp_menu < 16){
   // nwkDevAddress
     uint8 row = 0;
     uint8 col = 0;
@@ -1804,15 +1847,16 @@ static void TftNwk(uint8 temp_n){
       }
     }
 
-  if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ // portrait
-    row = temp_n *120;
-    col = 0;
-  } else { // landscape
-    row = 0;
-    col = temp_n *106;
+    if (!(zclApp_Config.HvacUiDisplayMode & DM_ROTATE)){ // portrait
+      row = temp_n *120;
+      col = 0;
+    } else { // landscape
+      row = 0;
+      col = temp_n *106;
+    }
+    GUI_DrawRectangle(32 + col, 120 + row, 32 + col + 72, 120 + row + 16, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
+    GUI_DisString_EN(32 + col, 120 + row, nwk_string, &Font16, zclApp_lcd_background, foreground);
   }
-  GUI_DrawRectangle(32 + col, 120 + row, 32 + col + 72, 120 + row + 16, zclApp_lcd_background, DRAW_FULL , DOT_PIXEL_DFT );
-  GUI_DisString_EN(32 + col, 120 + row, nwk_string, &Font16, zclApp_lcd_background, foreground); 
 }
 #endif
 
@@ -1873,8 +1917,10 @@ static void EpdNwk(uint8 temp_n){
 
 #if defined(TFT3IN5)
 static void TftBattery(uint8 temp_b){
-  //percentage
-  TftWidgetMeasuredValue(temp_b, CB_POWER_CFG); //0x01 battery 
+  if (!zcl_game && zclApp_menu < 16){
+    //percentage
+    TftWidgetMeasuredValue(temp_b, CB_POWER_CFG); //0x01 battery
+  }
 }
 #endif
 
@@ -1954,8 +2000,10 @@ static void EpdBattery(uint8 temp_b){
 
 #if defined(TFT3IN5)
 static void TftOccupancy(uint8 temp_oc){
-  // Occupancy
-  TftWidgetMeasuredValue(temp_oc, CB_OCCUPANCY); //0x20 occupancy 
+  if (!zcl_game && zclApp_menu < 16){
+    // Occupancy
+    TftWidgetMeasuredValue(temp_oc, CB_OCCUPANCY); //0x20 occupancy 
+  }
 }
 #endif
 
@@ -2017,15 +2065,19 @@ static void EpdOccupancy(uint8 temp_oc){
 
 #if defined(TFT3IN5)
 static void TftCO2(uint8 temp_co2){
-  //CO2
-  TftWidgetMeasuredValue(temp_co2, CB_CO2); //0x80 CO2
+  if (!zcl_game && zclApp_menu < 16){
+    //CO2
+    TftWidgetMeasuredValue(temp_co2, CB_CO2); //0x80 CO2
+  }
 }
 #endif
 
 #if defined(TFT3IN5)
 static void TftIlluminance(uint8 temp_i){
-  //Illuminance
-  TftWidgetMeasuredValue(temp_i, CB_ILLUMINANCE); //0x02 illuminance
+  if (!zcl_game && zclApp_menu < 16){
+    //Illuminance
+    TftWidgetMeasuredValue(temp_i, CB_ILLUMINANCE); //0x02 illuminance
+  }
 }
 #endif
 
@@ -2103,9 +2155,6 @@ static void EpdIlluminance(uint8 temp_i){
 #endif
 
 #if defined(TFT3IN5)
-// enable/disable display of values
-// bit 0 - 0x0001 POWER_CFG, 1 - 0x0400 ILLUMINANCE, 2 - 0x0402 TEMP,         3 - 0x0403 PRESSURE, 
-//     4 - 0x0405 HUMIDITY,  5 - 0x0406 OCCUPANCY,   6 - 0x000F BINARY_INPUT, 7 - table received
 static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit){
   uint16 row = 0;
   uint16 col = 0;
@@ -2338,7 +2387,9 @@ static void TftWidgetMeasuredValue(uint8 dev_num, uint16 cluster_bit){
 }
 
 static void TftTemperature(uint8 temp_t){
-  TftWidgetMeasuredValue(temp_t, CB_TEMP); //0x04 temperature
+  if (!zcl_game && zclApp_menu < 16){
+    TftWidgetMeasuredValue(temp_t, CB_TEMP); //0x04 temperature
+  }
 }
 #endif
 
@@ -2416,8 +2467,10 @@ static void EpdTemperature(uint8 temp_t){
 
 #if defined(TFT3IN5)
 static void TftHumidity(uint8 temp_h){
-  //humidity
-  TftWidgetMeasuredValue(temp_h, CB_HUMIDITY); //0x10 humidity
+  if (!zcl_game && zclApp_menu < 16){
+    //humidity
+    TftWidgetMeasuredValue(temp_h, CB_HUMIDITY); //0x10 humidity
+  }
 }
 #endif
 
@@ -2495,15 +2548,19 @@ static void EpdHumidity(uint8 temp_h){
 
 #if defined(TFT3IN5)
 static void TftPressure(uint8 temp_p){
-  //pressure
-  TftWidgetMeasuredValue(temp_p, CB_PRESSURE); //0x08 pressure 
+  if (!zcl_game && zclApp_menu < 16){
+    //pressure
+    TftWidgetMeasuredValue(temp_p, CB_PRESSURE); //0x08 pressure 
+  }
 }
 #endif
 
 #if defined(TFT3IN5)
 static void TftBinary(uint8 temp_b){
-  //binary
-  TftWidgetMeasuredValue(temp_b, CB_BINARY_INPUT); //0x40 binary 
+  if (!zcl_game && zclApp_menu < 16){
+    //binary
+    TftWidgetMeasuredValue(temp_b, CB_BINARY_INPUT); //0x40 binary 
+  }
 }
 #endif
 
@@ -2583,6 +2640,7 @@ static void EpdPressure(uint8 temp_p){
 #if defined(TFT3IN5)
 static void TfttestRefresh(uint8 i)
 {
+  if (!zcl_game && zclApp_menu < 16){
       LREP("bindClusterDev=0x%X 0x%X\r\n", temp_bindClusterDev[i], old_bindClusterDev[i]);     
       TftBindStatus(i);  // status bind
       TftLqi(i);         // lqi
@@ -2597,6 +2655,7 @@ static void TfttestRefresh(uint8 i)
       if (!(temp_bindClusterDev[i] & CB_PRESSURE)) {
         TftCO2(i);       // co2
       }
+  }
 }
 
 void TftUpdateRefresh(void) { 
@@ -2717,9 +2776,7 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
         
         zclApp_RequestAddr(temp_Sender_shortAddr[y]);
 #if defined(TFT3IN5) 
-        if (!zcl_game){
           TftNwk(i);
-        }
 #endif // TFT3IN5
 #if defined(EPD3IN7)      
 //        EpdNwk(i);
@@ -2741,10 +2798,8 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_Temperature_Sensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= CB_TEMP;
       old_bindClusterDev[i]  |= CB_TEMP;
-#if defined(TFT3IN5)
-      if (!zcl_game){      
+#if defined(TFT3IN5)      
         TftTemperature(i);
-      }
 #endif // TFT3IN5       
     }
     if (pInMsg->clusterId == HUMIDITY && pInAttrReport->attrList[n].attrID == ATTRID_MS_RELATIVE_HUMIDITY_MEASURED_VALUE){
@@ -2756,10 +2811,8 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_HumiditySensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= CB_HUMIDITY;
       old_bindClusterDev[i]  |= CB_HUMIDITY;
-#if defined(TFT3IN5) 
-      if (!zcl_game){      
+#if defined(TFT3IN5)       
         TftHumidity(i);
-      }
 #endif // TFT3IN5  
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_MEASURED_VALUE){
@@ -2771,10 +2824,8 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_PressureSensor_MeasuredValue[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= CB_PRESSURE;
       old_bindClusterDev[i]  |= CB_PRESSURE;
-#if defined(TFT3IN5)
-      if (!zcl_game){      
+#if defined(TFT3IN5)      
         TftPressure(i);
-      }
 #endif // TFT3IN5        
     }
     if (pInMsg->clusterId == PRESSURE && pInAttrReport->attrList[n].attrID == ATTRID_MS_PRESSURE_MEASUREMENT_SCALE){
@@ -2792,9 +2843,7 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_bindClusterDev[i] |= CB_ILLUMINANCE;
       old_bindClusterDev[i]  |= CB_ILLUMINANCE;
 #if defined(TFT3IN5) 
-      if (!zcl_game){
         TftIlluminance(i);
-      }
 #endif // TFT3IN5    
     }
     if (pInMsg->clusterId == POWER_CFG && pInAttrReport->attrList[n].attrID == ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING){
@@ -2802,9 +2851,7 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_bindClusterDev[i] |= CB_POWER_CFG;
       old_bindClusterDev[i]  |= CB_POWER_CFG; 
 #if defined(TFT3IN5) 
-      if (!zcl_game){
         TftBattery(i);
-      }
 #endif // TFT3IN5        
     }
     if (pInMsg->clusterId == OCCUPANCY && pInAttrReport->attrList[n].attrID == ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY){
@@ -2816,10 +2863,8 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_Occupied[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= CB_OCCUPANCY;
       old_bindClusterDev[i]  |= CB_OCCUPANCY;
-#if defined(TFT3IN5)
-      if (!zcl_game){      
+#if defined(TFT3IN5)      
         TftOccupancy(i);
-      }
 #endif // TFT3IN5         
     }
     if (pInMsg->clusterId == BINARY_INPUT && pInAttrReport->attrList[n].attrID == ATTRID_GEN_BINARY_INPUT_PRESENTVALUE){
@@ -2831,10 +2876,8 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_Binary[i] = BUILD_UINT16(pInAttrReport->attrList[n].attrData[0], pInAttrReport->attrList[n].attrData[1]);
       temp_bindClusterDev[i] |= CB_BINARY_INPUT;
       old_bindClusterDev[i]  |= CB_BINARY_INPUT;
-#if defined(TFT3IN5)
-      if (!zcl_game){      
+#if defined(TFT3IN5)     
         TftBinary(i);
-      }
 #endif // TFT3IN5       
     }
     
@@ -2850,9 +2893,7 @@ static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg )
       temp_bindClusterDev[i] |= CB_CO2;
       old_bindClusterDev[i]  |= CB_CO2;
 #if defined(TFT3IN5) 
-      if (!zcl_game){
         TftCO2(i);
-      }
 #endif // TFT3IN5    
     }
     
@@ -2957,10 +2998,10 @@ static void InitLedPWM(uint8 level){
 
 #ifdef TFT3IN5
 
-const char buttonlabels_const[14][6][6] = { // [menu][butt][number]
+const char buttonlabels_const[23][6][6] = { // [menu][butt][number]
                                        " ", " ", "MENU", " ",  " ", " ",     //0
-                                       "NET", "DISP", "GAME", "BEEP", " ", "EXIT", //1
-                                       "COLOR", "INVER", "ROTAT", " ", "BACKL", "EXIT", //2
+                                       "NET", "DISP", "GAME", "BEEP", "SENS", "EXIT", //1
+                                       "COLOR", "INVER", "ROTAT", "ADJUS", "BACKL", "EXIT", //2
                                        "Red", "Green", "Blue", " ", " ", "EXIT", //3
                                        " ", "LIGHT", "DARK", " ", " ", "EXIT", //4
                                        " ", "PORTR", "LANDS", " ", " ", "EXIT", //5
@@ -2972,15 +3013,59 @@ const char buttonlabels_const[14][6][6] = { // [menu][butt][number]
                                        "BND0", "BND1", "BND2", " ", " ", "EXIT", //11
                                        "JOIN", " ", " ", " ", " ", "EXIT", //12
                                        "SONG1", "SONG2", "STOP", " ", " ", "EXIT", //13
+                                       " ", "TEMP", "HUM", "PRESS", ">>>", "EXIT", //14
+                                       "BATT", "ILLUM", "CO2", "OCCUP", " ", "EXIT", //15
+                                       "T_CHN", "T_PER", " ", " ", " ", "EXIT", //16
+                                       "H_CHN", "H_PER", " ", " ", " ", "EXIT", //17
+                                       "P_CHN", "P_PER", " ", " ", " ", "EXIT", //18
+                                       " ", "B_PER", " ", " ", " ", "EXIT", //19
+                                       "I_CHN", "I_PER", "I_SEN", " ", " ", "EXIT", //20
+                                       "C_CHN", "C_PER", "C_FRC", " ", " ", "EXIT", //21
+                                       "OC_T", "UOC_T", " ", " ", " ", "EXIT", //22
 }; 
 
 static char buttonlabels[1][6][6] = { // [menu][butt][number]
                                        " ", " ", "MENU", " ",  " ", " ",     //0
-}; 
-static char zclApp_status_string[20] = "";
-static uint8 zclApp_butt = 0;
+};
+const char buttonlabels_digit[1][15][2] = {
+                                       "<",  " ", "W", 
+                                       "1",  "2", "3",
+                                       "4",  "5", "6",
+                                       "7",  "8", "9",
+                                       "*",  "0", ".",
+};
+static unsigned char textfield[12] = "";
+static uint8 selected_variable;
 
-static void zclApp_create_butt_main(uint8 block) {
+static void zclApp_create_textfield(void) {
+  LCD_SetArealColor(0, 136, 320, 184, zclApp_lcd_background);
+  GUI_DisString_EN(32, 136, (char *)textfield, &Font48, zclApp_lcd_background, WHITE);
+}
+
+static void zclApp_create_butt_digit(void) {
+  selected_variable = zclApp_butt;
+  LCD_SetArealColor(0, 120, 320, 136, zclApp_lcd_background);
+  GUI_DisString_EN(32, 120, buttonlabels[0][zclApp_butt], &Font16, zclApp_lcd_background, WHITE); 
+  
+  char bl[6] = {' '};
+  getButtonLabel(6, bl);
+  if (bl[0] == ' ') {  
+    LCD_SetArealColor(0, 188, 320, 480, zclApp_lcd_background);
+    for (uint8 row=0; row<5; row++) {
+      for (uint8 col=0; col<3; col++) {
+//          char bld = buttonlabels_digit[0][col + row*3];
+          initButton(6 + col + row*3, 4+(100/2)+col*(100+6), 188+(48/2)+row*(48+4),    // i, x, y, w, h, outline, fill, text
+                  100, 48,  WHITE, color_scheme[scheme][4], color_scheme[scheme][2],
+                  (char *)buttonlabels_digit[0][col + row*3], 2);
+        if (buttonlabels_digit[0][col + row*3][0] != ' ') {
+          drawButton(6 + col + row*3, 0);
+        }  
+      }
+    }
+  }
+} 
+
+static void zclApp_create_butt_main(uint8 block) { 
   zclApp_automenu();
   
   LCD_SetArealColor(0, 0, 320, 119, zclApp_lcd_background);
@@ -2996,15 +3081,23 @@ static void zclApp_create_butt_main(uint8 block) {
           drawButton(col + row*3, 0);
         }  
       }
-    }
+    }    
   } else {
-    memset(zclApp_status_string,0,20);
+//    memset(zclApp_status_string,0,25);
+    zclApp_status_string[0] = '\0';
     TftStatus(0);
     TftTimeDateWeek();
     initButton(2, 160+2+48+4+48+4+24 , 16+24,    // index, x, y
                48, 48,  WHITE, color_scheme[scheme][4],  color_scheme[scheme][2], //w, h, outline color, fill color, text color
                "M", 2); 
     drawButton(2, 0);
+  }
+  for (uint8 row=0; row<5; row++) {
+      for (uint8 col=0; col<3; col++) {
+          initButton(6 + col + row*3, 4+(100/2)+col*(100+6), 188+(48/2)+row*(48+4),    // i, x, y, w, h, outline, fill, text
+                  100, 48,  WHITE, color_scheme[scheme][4], color_scheme[scheme][2],
+                  " ", 2);
+      }
   }
 }
 
@@ -3081,25 +3174,33 @@ static void zclApp_automenu(void) {
   
 }
 
-void zclApp_keyprocessing(void) { 
-            int8 butt = pressButton();
-            //beep at press button
-            if (butt != -1 && buttonlabels[0][butt][0] != ' '){
-              beeping_beep_delay(400,20);
-            } else {
+void zclApp_keyprocessing(void) {
+            int8 butt = -1;
+            butt = pressButton();
+            zclApp_butt = butt;
+              char bl[6] = {' '};
+              getButtonLabel(butt, bl);
+//              LCD_SetArealColor(0, 160, 320, 176, zclApp_lcd_background);
+//              GUI_DisString_EN(32, 160, bl, &Font16, zclApp_lcd_background, WHITE);
+//              GUI_DisNum(62, 160, butt, &Font16, zclApp_lcd_background, WHITE);
+            if (butt == -1 || buttonlabels[0][butt][0] == ' ' || bl[0] == ' ') {
               return;
             }
-            zclApp_butt = butt;
-            //status string
-            if ((zclApp_menu !=6 && zclApp_menu !=7) || (zclApp_menu == 0 && butt == 2)){
+#ifdef HAL_LCD_PWM_PORT0
+            //beep at press button 
+            beeping_beep_delay(400,20);
+#endif            
+//            zclApp_butt = butt;
+            
+            //status string            
+            if ((zclApp_menu !=6 && zclApp_menu !=7 && zclApp_menu < 16) || (zclApp_menu == 0 && butt == 2)){
               uint8 n = osal_strlen(buttonlabels[0][zclApp_butt]);
               uint8 m = osal_strlen(zclApp_status_string);
-              for (uint8 i=0; i < n; i++) {
-                zclApp_status_string[m+i] = buttonlabels[0][zclApp_butt][i];
+              //do not execute if longer zclApp_status_string[]
+              if (n+m < 25) {
+                strcat(zclApp_status_string, buttonlabels[0][zclApp_butt]);
+                strcat(zclApp_status_string, ":");
               }
-              n = osal_strlen(zclApp_status_string);
-              zclApp_status_string[n] = ':';
-              zclApp_status_string[n + 1] = '\0';
             }
             // update inverse press button
             drawButton(butt, 0); // update press
@@ -3139,14 +3240,15 @@ void zclApp_keyprocessing(void) {
                     zcl_game = 1;
                     xpt2046_mode = 0;
                     breakout_start();
-#endif                     
+#endif
                     break;
                   case 3:
                     zclApp_menu = 13;
                     zclApp_create_butt_main(zclApp_menu);
                     break;
                   case 4:
-                    
+                    zclApp_menu = 14;
+                    zclApp_create_butt_main(zclApp_menu);                    
                     break;
                 }
                 break;
@@ -3165,7 +3267,8 @@ void zclApp_keyprocessing(void) {
                     zclApp_create_butt_main(zclApp_menu); //ROTATE                   
                     break;
                   case 3:
-                    
+                    TP_Adjust();
+                    TftUpdateRefresh();
                     break;
                   case 4:
                     zclApp_menu = 9;
@@ -3261,14 +3364,15 @@ void zclApp_keyprocessing(void) {
                 switch (butt){
                   case 0:
                     report = 1;
-                    zclBattery_Report();
+                    zclApp_ReadBattery();
                     report = 0;
                     break;
                   case 1:
-                    report = 1;
                     osal_stop_timerEx(zclApp_TaskID, APP_BH1750_DELAY_EVT);
                     osal_clear_event(zclApp_TaskID, APP_BH1750_DELAY_EVT);
+                    report = 1;
                     zclApp_bh1750StartLumosity();
+//                    report = 0;
                     break;
                   case 2:
                     report = 1;
@@ -3449,13 +3553,19 @@ void zclApp_keyprocessing(void) {
               case 13://zclApp_menu=13                
                 switch (butt){                 
                   case 0:
+#ifdef HAL_LCD_PWM_PORT0
                     beeping_seq_start(1);
+#endif
                     break;
                   case 1:
+#ifdef HAL_LCD_PWM_PORT0                    
                     beeping_seq_start(2);
+#endif
                     break;
                   case 2:
+#ifdef HAL_LCD_PWM_PORT0
                     beeping_seq_stop();
+#endif
                     break;
                   case 3:
 
@@ -3465,11 +3575,290 @@ void zclApp_keyprocessing(void) {
                     break;                  
                 }
                 break;
-            }
+              case 14://zclApp_menu=14                
+                switch (butt){                 
+                  case 0:
+                    
+                    break;
+                  case 1:
+                    zclApp_menu = 16;
+                    zclApp_create_butt_main(zclApp_menu);                    
+                    break;
+                  case 2:
+                    zclApp_menu = 17;
+                    zclApp_create_butt_main(zclApp_menu);                    
+                    break;
+                  case 3:
+                    zclApp_menu = 18;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;
+                  case 4:
+                    zclApp_menu = 15;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;                  
+                }
+                break;
+              case 15://zclApp_menu=15                
+                switch (butt){                 
+                  case 0:
+                    zclApp_menu = 19;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;
+                  case 1:
+                    zclApp_menu = 20;
+                    zclApp_create_butt_main(zclApp_menu);                    
+                    break;
+                  case 2:
+                    zclApp_menu = 21;
+                    zclApp_create_butt_main(zclApp_menu);                    
+                    break;
+                  case 3:
+                    zclApp_menu = 22;
+                    zclApp_create_butt_main(zclApp_menu);
+                    break;
+                  case 4:
 
-            if (butt == 5 && zclApp_menu != 0) {
-              zclApp_menu = 0;
-              zclApp_create_butt_main(zclApp_menu);
+                    break;                  
+                }
+                break;
+              case 16://zclApp_menu=16
+                switch (butt){                 
+                  case 0: 
+                    _itoa(zclApp_Config.MsTemperatureMinAbsoluteChange, textfield, 10);
+                    zclApp_create_textfield();
+                    zclApp_create_butt_digit();
+                    break;
+                  case 1:
+                    _itoa(zclApp_Config.MsTemperaturePeriod, textfield, 10); 
+                    zclApp_create_textfield();
+                    zclApp_create_butt_digit();                    
+                    break;                  
+                }
+                break;
+              case 17://zclApp_menu=17                
+                switch (butt){                 
+                  case 0: 
+                    _itoa(zclApp_Config.MsHumidityMinAbsoluteChange, textfield, 10); 
+                    zclApp_create_textfield();
+                    zclApp_create_butt_digit();
+                    break;
+                  case 1: 
+                    _itoa(zclApp_Config.MsHumidityPeriod, textfield, 10); 
+                    zclApp_create_textfield();
+                    zclApp_create_butt_digit();                    
+                    break;                  
+                }
+                break;
+              case 18://zclApp_menu=18                
+                switch (butt){                 
+                  case 0:
+                    _itoa(zclApp_Config.MsPressureMinAbsoluteChange, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();
+                    break;
+                  case 1: 
+                    _itoa(zclApp_Config.MsPressurePeriod, textfield, 10); 
+                    zclApp_create_textfield();
+                    zclApp_create_butt_digit();                    
+                    break;                  
+                }
+                break;
+              case 19://zclApp_menu=19                
+                switch (butt){                 
+                  case 1:
+                    _itoa(zclApp_Config.CfgBatteryPeriod, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();                    
+                    break;                  
+                }
+                break;
+              case 20://zclApp_menu=20                
+                switch (butt){                 
+                  case 0:
+                    _itoa(zclApp_Config.MsIlluminanceMinAbsoluteChange, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();
+                    break;
+                  case 1:
+                    _itoa(zclApp_Config.MsIlluminancePeriod, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();                    
+                    break;
+                  case 2:
+                    _itoa(zclApp_Config.MsIlluminanceLevelSensingSensitivity, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();                    
+                    break;
+                }
+                break;
+              case 21://zclApp_menu=21                
+                switch (butt){                 
+                  case 0:
+                    _itoa(zclApp_Config.CO2MinAbsoluteChange, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();
+                    break;
+                  case 1:
+                    _itoa(zclApp_Config.CO2Period, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();                    
+                    break;
+                  case 2:
+                    SCD4x_stopPeriodicMeasurement(500);
+                    char tml[] = "FRC Correction ";
+                    unsigned char tml_var[] = "";
+                    _ltoa((uint32)SCD4x_performForcedRecalibration(0x01e0), tml_var, 10);
+                    strcat(tml, (char const*)tml_var);
+                    zclApp_TftMessageLine(tml);
+                    SCD4x_startPeriodicMeasurement();
+                    break; 
+                }
+                break;
+              case 22://zclApp_menu=22 
+                switch (butt){                 
+                  case 0:
+                    _itoa(zclApp_Config.PirOccupiedToUnoccupiedDelay, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();
+                    break;
+                  case 1:
+                    _itoa(zclApp_Config.PirUnoccupiedToOccupiedDelay, textfield, 10); 
+                    zclApp_create_textfield();                    
+                    zclApp_create_butt_digit();                    
+                    break;                  
+                }
+                break;
+            }
+            
+            if (butt >= 9 && butt <= 20){
+              unsigned char label[6] = "";
+              getButtonLabel(butt, (char*)label);
+              uint8 n = osal_strlen((char*)label);
+              uint8 m = osal_strlen((char*)textfield);
+              if (n+m < 12){
+                strcat((char*)textfield, (char const*)label);
+                zclApp_create_textfield();
+              }
+            }
+            
+            if (butt == 6){
+              uint8 m = osal_strlen((char*)textfield);
+              if (m > 0) {
+                textfield[m-1] =  '\0';
+                zclApp_create_textfield();
+              }
+            }
+            
+            if (butt == 8){
+              char *endptr;
+              uint32 num = strtol((char const*)textfield, &endptr, 10);
+              if (*endptr != '\0') {
+                exit(EXIT_FAILURE);
+              }              
+              switch (zclApp_menu){
+                case 16:
+                  switch (selected_variable){                 
+                    case 0:
+                      zclApp_Config.MsTemperatureMinAbsoluteChange = (uint16)num;
+                      break;
+                    case 1:
+                      zclApp_Config.MsTemperaturePeriod =  (uint16)num;                  
+                      break;                  
+                  }
+                  report = 1;
+                  zclApp_ReadBME280Temperature();
+                  report = 0;
+                  break;
+                case 17:
+                  switch (selected_variable){                 
+                    case 0:
+                      zclApp_Config.MsHumidityMinAbsoluteChange = (uint16)num;
+                      break;
+                    case 1:
+                      zclApp_Config.MsHumidityPeriod =  (uint16)num;                  
+                      break;                  
+                  }
+                  report = 1;
+                  zclApp_ReadBME280Humidity();
+                  report = 0;
+                  break;
+                case 18:
+                  switch (selected_variable){                 
+                    case 0:
+                      zclApp_Config.MsPressureMinAbsoluteChange = (uint16)num;
+                      break;
+                    case 1:
+                      zclApp_Config.MsPressurePeriod =  (uint16)num;                  
+                      break;                  
+                  }
+                  report = 1;
+                  zclApp_ReadBME280Pressure();
+                  report = 0;
+                  break;
+                case 19:
+                  switch (selected_variable){                 
+                    case 1:
+                      zclApp_Config.CfgBatteryPeriod =  (uint16)num;                  
+                      break;                  
+                  }
+                  report = 1;
+                  zclApp_ReadBattery();
+                  report = 0;
+                  break;
+                case 20:
+                  switch (selected_variable){                 
+                    case 0:
+                      zclApp_Config.MsIlluminanceMinAbsoluteChange = (uint16)num;
+                      break;
+                    case 1:
+                      zclApp_Config.MsIlluminancePeriod =  (uint16)num;                  
+                      break;
+                    case 2:
+                      zclApp_Config.MsIlluminanceLevelSensingSensitivity =  (uint16)num;                  
+                      break;
+                  }
+                  osal_stop_timerEx(zclApp_TaskID, APP_BH1750_DELAY_EVT);
+                  osal_clear_event(zclApp_TaskID, APP_BH1750_DELAY_EVT);
+                  report = 1;
+                  zclApp_bh1750StartLumosity();
+//                  report = 0;
+                  break;
+                case 21:
+                  switch (selected_variable){                 
+                    case 0:
+                      zclApp_Config.CO2MinAbsoluteChange = (uint16)num;
+                      break;
+                    case 1:
+                      zclApp_Config.CO2Period =  (uint16)num;                  
+                      break;                  
+                  }
+                  report = 1;
+                  zclApp_scd4xReadCO2();
+                  report = 0;
+                  break;
+                case 22:
+                  switch (selected_variable){                 
+                    case 0:
+                      zclApp_Config.PirOccupiedToUnoccupiedDelay = (uint16)num;
+                      break;
+                    case 1:
+                      zclApp_Config.PirUnoccupiedToOccupiedDelay =  (uint16)num;                  
+                      break;                  
+                  }
+                  zclRep_Occupancy();
+                  break;
+              }
+              // save attributes to NV
+              osal_start_timerEx(zclApp_TaskID, APP_SAVE_ATTRS_EVT, 2000);
+            }            
+
+            if (butt == 5) {
+              if (zclApp_menu >=16){
+                TftUpdateRefresh();
+              } else {
+                zclApp_menu = 0;
+                zclApp_create_butt_main(zclApp_menu);
+              }
             } 
          
 }
@@ -3477,6 +3866,7 @@ void zclApp_keyprocessing(void) {
 void zclApp_TPkeyprocessing(void) {          
           if (!zcl_game){
             xpt2046_mode = 1;
+//            xpt2046_mode = 0;
             zclApp_keyprocessing();
           } else {
 #if defined(BREAKOUT)

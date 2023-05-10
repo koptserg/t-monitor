@@ -50,6 +50,9 @@ uint16 zclApp_bh1750IlluminanceSensor_MeasuredValue = 0;
 float zclApp_scd4xCO2Sensor_MeasuredValue = 0.0;
 bool zclApp_scd4xCO2Sensor_ForcedRecalibration = 0;
 
+uint8 zclApp_BatteryVoltage = 0xff;
+uint8 zclApp_BatteryPercentageRemainig = 0xff;
+
 //uint8 zclApp_Magnet_OnOff = 0;
 uint8 zclApp_Magnet = 0;
 uint8 zclApp_Occupied_OnOff = 0;
@@ -66,7 +69,7 @@ uint8 zclApp_Occupied = 0;
 #define DEFAULT_MsPressureMinAbsoluteChange 1
 #define DEFAULT_MsHumidityMinAbsoluteChange 1000 //10.00%
 #define DEFAULT_MsIlluminanceMinAbsoluteChange 10
-#define DEFAULT_CO2MinAbsoluteChange 100
+#define DEFAULT_CO2MinAbsoluteChange 50
 #define DEFAULT_MsTemperaturePeriod 10
 #define DEFAULT_MsPressurePeriod 10
 #define DEFAULT_MsHumidityPeriod 10
@@ -119,8 +122,8 @@ CONST zclAttrRec_t zclApp_AttrsFirstEP[] = {
     {BASIC, {ATTRID_BASIC_SW_BUILD_ID, ZCL_DATATYPE_CHAR_STR, R, (void *)zclApp_DateCode}},
     {BASIC, {ATTRID_CLUSTER_REVISION, ZCL_DATATYPE_UINT16, R, (void *)&zclApp_clusterRevision_all}},   
     
-    {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_VOLTAGE, ZCL_UINT8, RR, (void *)&zclBattery_Voltage}},
-    {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING, ZCL_UINT8, RR, (void *)&zclBattery_PercentageRemainig}},
+    {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_VOLTAGE, ZCL_UINT8, RR, (void *)&zclApp_BatteryVoltage}},
+    {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING, ZCL_UINT8, RR, (void *)&zclApp_BatteryPercentageRemainig}},
     {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_PERIOD, ZCL_UINT16, RRW, (void *)&zclApp_Config.CfgBatteryPeriod}},
     
     {ONOFF, {ATTRID_ON_OFF, ZCL_BOOLEAN, RR, (void *)&zclApp_Occupied_OnOff}},

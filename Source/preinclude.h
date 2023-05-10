@@ -26,13 +26,25 @@
 #define ZCL_REPORTING_DEVICE
 #define ZCL_REPORT_DESTINATION_DEVICE
 
+#if defined(HAL_BOARD_MONITOR)
+//#define POWER_SAVING
+//#define DO_DEBUG_UART
+
+#elif defined(HAL_BOARD_CHDTECH_DEV)
+// #define DO_DEBUG_UART
+#define DO_DEBUG_MT
+
+#endif
+
 #ifdef EPD3IN7
 #define ZSTACK_DEVICE_BUILD (DEVICE_BUILD_ENDDEVICE)
 #endif
 #ifdef TFT3IN5
 //#define ZSTACK_DEVICE_BUILD (DEVICE_BUILD_ROUTER)
 #define ZSTACK_DEVICE_BUILD (DEVICE_BUILD_ENDDEVICE)
+#ifndef DO_DEBUG_UART
 #define BREAKOUT
+#endif
 #endif
 
 #define DISABLE_GREENPOWER_BASIC_PROXY
@@ -57,7 +69,7 @@
 #define MT_SYS_FUNC
 #define MT_ZDO_FUNC
 #define MT_ZDO_MGMT
-#define INT_HEAP_LEN (2688 - 0x100 - 0x3 - 0x1F - 0x3)
+#define INT_HEAP_LEN (2688 - 0x100 - 0x3 - 0x1F - 0x3 - 0xE)
 #endif
 
 
@@ -76,16 +88,6 @@ Max num of cluster with reportable attributes in any endpoint
 regardless of the number of reportable attributes in the cluster)
 */
 #define BDB_MAX_CLUSTERENDPOINTS_REPORTING 10
-
-#if defined(HAL_BOARD_MONITOR)
-//#define POWER_SAVING
-//#define DO_DEBUG_UART
-
-#elif defined(HAL_BOARD_CHDTECH_DEV)
-// #define DO_DEBUG_UART
-#define DO_DEBUG_MT
-
-#endif
 
 //Motion
 #define MOTION_PORT 1 
@@ -121,6 +123,7 @@ regardless of the number of reportable attributes in the cluster)
 #define HAL_LCD_PWM_PORT 1
 #define HAL_LCD_PWM_PIN  4  // TFT PWM
 #define HAL_LCD_PWM_PORT1   // enable TFT PWM
+#define HAL_LCD_RGB_18BIT
 #endif
 //i2c bh1750
 #define OCM_CLK_PORT 0

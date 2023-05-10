@@ -21,7 +21,7 @@ bool xpt2046_mode = 1;
 
 static void DelayMs(unsigned int delaytime);
 static void DelayUs(uint16 microSecs);
-static void TP_Adjust(void);
+//static void TP_Adjust(void);
 static void TP_Dialog(void);
 static unsigned int TP_Read_ADC(unsigned char CMD);
 static unsigned int TP_Read_ADC_Average(unsigned char Channel_Cmd);
@@ -33,25 +33,40 @@ static void TP_ShowInfo(POINT Xpoint0, POINT Ypoint0,
                         POINT Xpoint2, POINT Ypoint2,
                         POINT Xpoint3, POINT Ypoint3,
                         POINT hwFac);
-static void TP_Adjust(void);
 static uint8 TP_Scan(uint8 chCoordType);
-static void TP_Init( LCD_SCAN_DIR Lcd_ScanDir );
+//static void TP_Init( LCD_SCAN_DIR Lcd_ScanDir );
+void TP_GetAdFac(void);
+void TP_GetAdFac2(void);
 
 uint8 xpt2046_TaskId = 0;
 
 void xpt2046_Init(uint8 task_id) {
     xpt2046_TaskId = task_id;
-    
-    LCD_SCAN_DIR Lcd_ScanDir = SCAN_DIR_DFT;    //SCAN_DIR_DFT = D2U_L2R
-    TP_Init( Lcd_ScanDir );
+#ifdef HAL_LCD_RGB_18BIT    
+//    LCD_SCAN_DIR Lcd_ScanDir = L2R_U2D;
+    LCD_SCAN_DIR Lcd_ScanDir = SCAN_DIR_DFT;
+    TP_GetAdFac2(); // default calibration factor 2
+#else    
+    LCD_SCAN_DIR Lcd_ScanDir = SCAN_DIR_DFT;    //SCAN_DIR_DFT = R2L_D2U
     TP_GetAdFac(); // default calibration factor 
+#endif    
+    TP_Init( Lcd_ScanDir );
+
 }
 
 uint16 xpt2046_event_loop(uint8 task_id, uint16 events) {
+//     TP_Adjust();
      if (events & APP_TFT_TPIRQ_EVT) {
-//        LREPMaster("APP_TFT_TPIRQ_EVT\r\n");
+        LREPMaster("APP_TFT_TPIRQ_EVT\r\n");
           uint8 press_down = TP_Scan(0);
+          
 //          LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
+       
+//         LCD_SetArealColor(40, 160, 320, 176, FONT_BACKGROUND);
+//         GUI_DisNum(40, 160, sTP_Draw.Xpoint, &Font16, FONT_BACKGROUND, BLACK);
+//         GUI_DisNum(140, 160, sTP_Draw.Ypoint, &Font16, FONT_BACKGROUND, BLACK);         
+//         GUI_DrawPoint(sTP_Draw.Xpoint, sTP_Draw.Ypoint, WHITE, DOT_PIXEL_DFT, DOT_STYLE_DFT);
+         
          zclApp_TPkeyprocessing();
         
         return (events ^ APP_TFT_TPIRQ_EVT);
@@ -60,13 +75,18 @@ uint16 xpt2046_event_loop(uint8 task_id, uint16 events) {
     return 0;
 }    
 
-void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode) {
+void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode) { 
+  
   bool contact = portAndAction & HAL_KEY_PRESS ? TRUE : FALSE;
   if (portAndAction & HAL_KEY_PORT0) {
-        LREPMaster("Key press PORT0\r\n");       
+//        LREPMaster("Key press PORT0\r\n");       
         if (contact){
           if (tp_pres){
-            osal_start_timerEx(xpt2046_TaskId, APP_TFT_TPIRQ_EVT, 10);
+            if (xpt2046_mode) {
+              osal_start_timerEx(xpt2046_TaskId, APP_TFT_TPIRQ_EVT, 10); // 100
+            } else {
+              osal_start_timerEx(xpt2046_TaskId, APP_TFT_TPIRQ_EVT, 10);
+            }
           }
           if (xpt2046_mode) {
             tp_pres = 0;
@@ -75,6 +95,7 @@ void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode) {
           tp_pres = 1;
         }
     }
+
 }
 
 /*******************************************************************************
@@ -87,6 +108,7 @@ void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode) {
 static unsigned int TP_Read_ADC(unsigned char CMD)
 { 
   unsigned int Data = 0;
+
   Data = HalLcd_HW_TP_Read(CMD);
 
   return Data;
@@ -136,19 +158,21 @@ static unsigned int TP_Read_ADC_Average(unsigned char Channel_Cmd)
 
 static void DelayUs(uint16 microSecs)
 {
-  while(microSecs--)
-  {
-    /* 32 NOPs == 1 usecs */
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop");
+  while(microSecs--) {
+    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
   }
 }
 
+static void DelayMs(unsigned int delaytime) {
+  while(delaytime--)
+  {
+    uint16 microSecs = 1000;
+    while(microSecs--)
+    {
+      asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
+    }
+  }
+}
 /*******************************************************************************
   function:
         Read X channel and Y channel AD value
@@ -177,17 +201,21 @@ static bool TP_Read_TwiceADC(unsigned int *pXCh_Adc, unsigned int  *pYCh_Adc )
 
   //Read the ADC values Read the ADC values twice
   TP_Read_ADC_XY(&XCh_Adc1, &YCh_Adc1);
-  //  Driver_Delay_us(10);
+//    DelayUs(10);
   TP_Read_ADC_XY(&XCh_Adc2, &YCh_Adc2);
-  //  Driver_Delay_us(10);
+//    DelayUs(10);
 
   //The ADC error used twice is greater than ERR_RANGE to take the average
-  if ( ((XCh_Adc2 <= XCh_Adc1 && XCh_Adc1 < XCh_Adc2 + ERR_RANGE) ||
+  if ( 
+       ((XCh_Adc2 <= XCh_Adc1 && XCh_Adc1 < XCh_Adc2 + ERR_RANGE) ||
         (XCh_Adc1 <= XCh_Adc2 && XCh_Adc2 < XCh_Adc1 + ERR_RANGE))
-       && ((YCh_Adc2 <= YCh_Adc1 && YCh_Adc1 < YCh_Adc2 + ERR_RANGE) ||
-           (YCh_Adc1 <= YCh_Adc2 && YCh_Adc2 < YCh_Adc1 + ERR_RANGE))) {
+    && ((YCh_Adc2 <= YCh_Adc1 && YCh_Adc1 < YCh_Adc2 + ERR_RANGE) ||
+        (YCh_Adc1 <= YCh_Adc2 && YCh_Adc2 < YCh_Adc1 + ERR_RANGE)) 
+      )
+  {
     *pXCh_Adc = (XCh_Adc1 + XCh_Adc2) / 2;
     *pYCh_Adc = (YCh_Adc1 + YCh_Adc2) / 2;
+    
     return 1;
   }
 
@@ -206,17 +234,20 @@ static bool TP_Read_TwiceADC(unsigned int *pXCh_Adc, unsigned int  *pYCh_Adc )
 static uint8 TP_Scan(uint8 chCoordType)
 {
   //In X, Y coordinate measurement, IRQ is disabled and output is low
+  if (P0_4 == 0) {//Press the button to press
     //Read the physical coordinates
     if (chCoordType) {
       TP_Read_TwiceADC(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint);
+      
       //Read the screen coordinates
-    } else if (TP_Read_TwiceADC(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint)) {
+    } else if (TP_Read_TwiceADC(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint)) { 
+      
       if (sTP_DEV.TP_Scan_Dir == R2L_D2U) {       //Converts the result to screen coordinates
         sTP_Draw.Xpoint = (uint16)(sTP_DEV.fXfac * sTP_DEV.Xpoint) +
                           sTP_DEV.iXoff;
         sTP_Draw.Ypoint = (uint16)(sTP_DEV.fYfac * sTP_DEV.Ypoint) +
                           sTP_DEV.iYoff;
-      } else if (sTP_DEV.TP_Scan_Dir == L2R_U2D) {
+      } else if (sTP_DEV.TP_Scan_Dir == L2R_U2D) { //        
         sTP_Draw.Xpoint = sLCD_DIS.LCD_Dis_Column -
                           (uint16)(sTP_DEV.fXfac * sTP_DEV.Xpoint) -
                           sTP_DEV.iXoff;
@@ -236,6 +267,7 @@ static uint8 TP_Scan(uint8 chCoordType)
                           (uint16)(sTP_DEV.fYfac * sTP_DEV.Xpoint) -
                           sTP_DEV.iYoff;
       }
+      
 //      LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
     }
     if (0 == (sTP_DEV.chStatus & TP_PRESS_DOWN)) {  //Not being pressed
@@ -243,7 +275,16 @@ static uint8 TP_Scan(uint8 chCoordType)
       sTP_DEV.Xpoint0 = sTP_DEV.Xpoint;
       sTP_DEV.Ypoint0 = sTP_DEV.Ypoint;
     }
-
+  } else {
+    if (sTP_DEV.chStatus & TP_PRESS_DOWN) { //0x80
+      sTP_DEV.chStatus &= ~(1 << 7);      //0x00
+    } else {
+      sTP_DEV.Xpoint0 = 0;
+      sTP_DEV.Ypoint0 = 0;
+      sTP_DEV.Xpoint = 0xffff;
+      sTP_DEV.Ypoint = 0xffff;
+    }
+  }
   return (sTP_DEV.chStatus & TP_PRESS_DOWN);
 }
 
@@ -320,7 +361,7 @@ static void TP_ShowInfo(POINT Xpoint0, POINT Ypoint0,
   function:
         Touch screen adjust
 *******************************************************************************/
-static void TP_Adjust(void)
+void TP_Adjust(void)
 {
   unsigned char  cnt = 0;
   unsigned int XYpoint_Arr[4][2];
@@ -336,19 +377,19 @@ static void TP_Adjust(void)
 
   unsigned char Mar_Val = 12;
   TP_DrawCross(Mar_Val, Mar_Val, RED);
-
   sTP_DEV.chStatus = 0;
-
   while (1) {
     TP_Scan(1);
+
     if ((sTP_DEV.chStatus & 0xC0) == TP_PRESSED) {
+//    if (P0_4 == 0) {
+         LCD_SetArealColor(40, 160, 320, 176, FONT_BACKGROUND);
+         GUI_DisNum(40, 160, sTP_DEV.Xpoint, &Font16, FONT_BACKGROUND, BLACK);
+         GUI_DisNum(140, 160, sTP_DEV.Ypoint, &Font16, FONT_BACKGROUND, BLACK);
+         GUI_DisNum(240, 160, cnt, &Font16, FONT_BACKGROUND, BLACK);
       sTP_DEV.chStatus &= ~(1 << 6);
       XYpoint_Arr[cnt][0] = sTP_DEV.Xpoint;
       XYpoint_Arr[cnt][1] = sTP_DEV.Ypoint;
-      //          DEBUG("X%d,Y%d = %d,%d\r\n",
-      //                cnt,cnt,
-      //                XYpoint_Arr[cnt][0],
-      //                XYpoint_Arr[cnt][1]);
       cnt ++;
       DelayMs(200);
 
@@ -389,8 +430,8 @@ static void TP_Adjust(void)
           Sqrt2 = (uint16)(sqrt(Dx + Dy));
 
           Dsqrt = (float)Sqrt1 / Sqrt2;
+          
           if (Dsqrt < 0.95 || Dsqrt > 1.05 || Sqrt1 == 0 || Sqrt2 == 0) {
-//            DEBUG("Adjust X direction \r\n");
             cnt = 0;
             TP_ShowInfo(XYpoint_Arr[0][0], XYpoint_Arr[0][1],
                         XYpoint_Arr[1][0], XYpoint_Arr[1][1],
@@ -401,7 +442,7 @@ static void TP_Adjust(void)
             TP_DrawCross(sLCD_DIS.LCD_Dis_Column - Mar_Val,
                          sLCD_DIS.LCD_Dis_Page - Mar_Val, WHITE);
             TP_DrawCross(Mar_Val, Mar_Val, RED);
-            continue;
+//            continue;
           }
 
           // 2.Compare the Y direction
@@ -434,7 +475,7 @@ static void TP_Adjust(void)
             TP_DrawCross(sLCD_DIS.LCD_Dis_Column - Mar_Val,
                          sLCD_DIS.LCD_Dis_Page - Mar_Val, WHITE);
             TP_DrawCross(Mar_Val, Mar_Val, RED);
-            continue;
+//            continue;
           }//
 
           //3.Compare diagonal
@@ -456,7 +497,7 @@ static void TP_Adjust(void)
 
           Dsqrt = (float)Sqrt1 / Sqrt2;
           if (Dsqrt < 0.95 || Dsqrt > 1.05) {
-//            DEBUG("Adjust diagonal direction\r\n");
+
             cnt = 0;
             TP_ShowInfo(XYpoint_Arr[0][0], XYpoint_Arr[0][1],
                         XYpoint_Arr[1][0], XYpoint_Arr[1][1],
@@ -467,12 +508,13 @@ static void TP_Adjust(void)
             TP_DrawCross(sLCD_DIS.LCD_Dis_Column - Mar_Val,
                          sLCD_DIS.LCD_Dis_Page - Mar_Val, WHITE);
             TP_DrawCross(Mar_Val, Mar_Val, RED);
-            continue;
+//            continue;
           }
 
           //4.Get the scale factor and offset
           //Get the scanning direction of the touch screen
           sTP_DEV.TP_Scan_Dir = sLCD_DIS.LCD_Scan_Dir;
+//          sTP_DEV.TP_Scan_Dir = L2R_U2D;
           sTP_DEV.fXfac = 0;
 
           //According to the display direction to get
@@ -558,6 +600,10 @@ static void TP_Adjust(void)
           DEBUG("sTP_DEV.iYoff = %d \r\n");
           DEBUG( sTP_DEV.iYoff);
 */
+          LREP("sTP_DEV.fXfac = %f \r\n", sTP_DEV.fXfac);
+          LREP("sTP_DEV.fYfac = %f \r\n", sTP_DEV.fYfac);
+          LREP("sTP_DEV.iXoff = %d \r\n", sTP_DEV.iXoff);
+          LREP("sTP_DEV.iYoff = %d \r\n", sTP_DEV.iYoff);
 
           //6.Calibration is successful
 //          DEBUG("Adjust OK\r\n");
@@ -604,6 +650,36 @@ void TP_GetAdFac(void)
     sTP_DEV.fYfac =  0.133178F ;
     sTP_DEV.iXoff = -22L ;
     sTP_DEV.iYoff = -38L ;
+  } else if ( sTP_DEV.TP_Scan_Dir == U2D_R2L ) {
+    sTP_DEV.fXfac = -0.132906F ;
+    sTP_DEV.fYfac = 0.087964F ;
+    sTP_DEV.iXoff = 517L ;
+    sTP_DEV.iYoff = -20L ;
+  } else {
+    LCD_Clear(LCD_BACKGROUND);
+    GUI_DisString_EN(0, 60, "Does not support touch-screen \
+                        calibration in this direction",
+                     &Font16, FONT_BACKGROUND, RED);
+  }
+}
+
+void TP_GetAdFac2(void)
+{
+  if ( sTP_DEV.TP_Scan_Dir == D2U_L2R ) { 
+    sTP_DEV.fXfac = -0.132443F ;
+    sTP_DEV.fYfac = 0.089997F ;
+    sTP_DEV.iXoff = 516L ;
+    sTP_DEV.iYoff = -22L ;
+  } else if ( sTP_DEV.TP_Scan_Dir == L2R_U2D ) {// HAL_LCD_RGB_18BIT
+    sTP_DEV.fXfac = -0.118258F ; //-0.118258F
+    sTP_DEV.fYfac = -0.149020F ; //-0.149020F
+    sTP_DEV.iXoff = 391L ; // 391L
+    sTP_DEV.iYoff = 520L ; // 520L
+  } else if ( sTP_DEV.TP_Scan_Dir == R2L_D2U ) {//SCAN_DIR_DFT = R2L_D2U
+    sTP_DEV.fXfac = -0.113020F ; //0.089697F
+    sTP_DEV.fYfac = -0.147287F ; //0.134792F
+    sTP_DEV.iXoff = 378L ; // -39
+    sTP_DEV.iYoff = 522L ; // 0
   } else if ( sTP_DEV.TP_Scan_Dir == U2D_R2L ) {
     sTP_DEV.fXfac = -0.132906F ;
     sTP_DEV.fYfac = 0.087964F ;
@@ -761,22 +837,11 @@ void TP_DrawBoard(void)
   function:
         Touch pad initialization
 *******************************************************************************/
-static void TP_Init( LCD_SCAN_DIR Lcd_ScanDir )
+void TP_Init( LCD_SCAN_DIR Lcd_ScanDir )
 {
 //  TP_CS_1;
 
   sTP_DEV.TP_Scan_Dir = Lcd_ScanDir;
 
   TP_Read_ADC_XY(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint);
-}
-
-static void DelayMs(unsigned int delaytime) {
-  while(delaytime--)
-  {
-    uint16 microSecs = 1000;
-    while(microSecs--)
-    {
-      asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    }
-  }
 }

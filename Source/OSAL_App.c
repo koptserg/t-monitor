@@ -38,6 +38,7 @@ const pTaskEventHandlerFn tasksArr[] = {macEventLoop,
                                         zcl_event_loop,
                                         bdb_event_loop,
                                         zclApp_event_loop,
+                                        zclApp_event_loop_2,
 #if defined( TFT3IN5 ) 
                                         xpt2046_event_loop,
 #if defined(BREAKOUT)
@@ -71,6 +72,7 @@ void osalInitTasks(void) {
     zcl_Init(taskID++);
     bdb_Init(taskID++);
     zclApp_Init(taskID++);
+    zclApp_Init_2(taskID++);
 #if defined( TFT3IN5 )
     xpt2046_Init(taskID++);
 #if defined(BREAKOUT)

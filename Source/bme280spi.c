@@ -170,6 +170,8 @@
 #define LCD_RELEASE_RESET()   HAL_IO_SET(HAL_LCD_RESET_PORT, HAL_LCD_RESET_PIN, 1);
 
 void bme_HW_WaitUs(uint16 i);
+void bme_HW_WaitMs(uint32 milliSecs);
+
 void bme280_write8(uint8 reg, uint8 data);
 uint8 bme280_read8(uint8 reg);
 bool bme280_isReadingCalibration(void);
@@ -241,11 +243,14 @@ void HalLcd_HW_Init(void){
 #endif
 #if defined(TFT3IN5)
   LCD_RELEASE_RESET();
-  bme_HW_WaitUs(50000); // 50 ms
+//  bme_HW_WaitUs(50000); // 50 ms
+  bme_HW_WaitMs(50); // 50 ms
   LCD_ACTIVATE_RESET();
-  bme_HW_WaitUs(50000); // 50 ms
+//  bme_HW_WaitUs(50000); // 50 ms
+  bme_HW_WaitMs(100); // 100 ms
   LCD_RELEASE_RESET();
-  bme_HW_WaitUs(50000); // 50 ms
+//  bme_HW_WaitUs(50000); // 50 ms
+  bme_HW_WaitMs(50); // 50 ms
 #endif  
 }
 
@@ -378,12 +383,12 @@ void bme_ConfigGP(void)
   HAL_CONFIG_IO_GP(HAL_LCD_MOSI_PORT, HAL_LCD_MOSI_PIN);
   HAL_CONFIG_IO_GP(HAL_LCD_MISO_PORT, HAL_LCD_MISO_PIN);
 }
-
+/*
 void bme_HW_WaitUs(uint16 microSecs)
 {
   while(microSecs--)
   {
-    /* 32 NOPs == 1 usecs */
+    // 32 NOPs == 1 usecs 
     asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
     asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
     asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
@@ -391,6 +396,17 @@ void bme_HW_WaitUs(uint16 microSecs)
     asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
     asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
     asm("nop"); asm("nop");
+  }
+}
+*/
+void bme_HW_WaitUs(uint16 microSecs) {
+  while(microSecs--) {
+    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
+  }
+}
+void bme_HW_WaitMs(uint32 milliSecs) {
+  while(milliSecs--) {
+    bme_HW_WaitUs(1000);
   }
 }
 
@@ -715,10 +731,14 @@ void HalLcd_HW_Write_AllData(uint16 data, uint32 datalen)
   LCD_DO_WRITE();
   uint32 i;
   for(i = 0; i < datalen; i++) {
+#ifdef HAL_LCD_RGB_18BIT    
+    LCD_SPI_TX((data>>8)&0xF8);//RED
+    LCD_SPI_TX((data>>3)&0xFC);//GREEN
+    LCD_SPI_TX(data<<3);//BLUE
+#else
     LCD_SPI_TX(data >> 8);
-//    LCD_SPI_WAIT_RXRDY();
     LCD_SPI_TX(data & 0XFF);
-//    LCD_SPI_WAIT_RXRDY();
+#endif    
   }
   LCD_SPI_END2();
 }
@@ -727,9 +747,9 @@ void HalLcd_HW_Write_AllData(uint16 data, uint32 datalen)
 uint16 HalLcd_HW_TP_Read(uint8 cmd)
 {
   uint16 data = 0;
- 
+
   LCD_SPI_BEGIN3();
-  
+ 
   LCD_SPI_TX(cmd | 0x80);
   LCD_SPI_WAIT_RXRDY();
   
