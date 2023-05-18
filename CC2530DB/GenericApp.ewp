@@ -2370,6 +2370,12 @@
             <name>$PROJ_DIR$\..\Source\fonts.h</name>
         </file>
         <file>
+            <name>$PROJ_DIR$\..\Source\ft6236.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\ft6236.h</name>
+        </file>
+        <file>
             <name>$PROJ_DIR$\..\zstack-lib\hal_key.c</name>
         </file>
         <file>
