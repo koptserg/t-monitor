@@ -22,15 +22,15 @@ function:
 			scanning method
 ********************************************************************************/
 typedef enum {
-    L2R_U2D  = 0,	//The display interface is displayed , left to right, up to down
+    L2R_U2D  = 0, // 0	//The display interface is displayed , left to right, up to down
     L2R_D2U  ,
     R2L_U2D  ,
-    R2L_D2U  ,
+    R2L_D2U  , // 180
 
     U2D_L2R  ,
-    U2D_R2L  ,
-    D2U_L2R  ,
-    D2U_R2L  ,
+    U2D_R2L  , // 90
+    D2U_L2R  , //270
+    D2U_R2L  , 
 } LCD_SCAN_DIR;
 //#define SCAN_DIR_DFT  D2U_L2R  //Default scan direction = L2R_U2D
 

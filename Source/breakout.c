@@ -125,7 +125,7 @@ void breakout_keyprocessing(void)
             if (butt == 0 && !s_play && !butt_pause) {
                 s_play = 0;
                 zcl_game = 0;
-                xpt2046_mode = 1;
+                tp_mode = 1;
               return;
             }
             if (butt == 2) {

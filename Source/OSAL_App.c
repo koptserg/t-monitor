@@ -18,6 +18,7 @@
 #include "beeping.h"
 
 #include "xpt2046.h"
+#include "ft6236.h"
 #include "bme280spi.h"
 
 #include "Debug.h"
@@ -39,8 +40,13 @@ const pTaskEventHandlerFn tasksArr[] = {macEventLoop,
                                         bdb_event_loop,
                                         zclApp_event_loop,
                                         zclApp_event_loop_2,
-#if defined( TFT3IN5 ) 
+#if defined(TFT3IN5)
+#if defined(RTP_XPT2046)
                                         xpt2046_event_loop,
+#endif   
+#if defined(CTP_FT6236)
+                                        ft6236_event_loop,
+#endif 
 #if defined(BREAKOUT)
                                         breakout_event_loop,
 #endif                                        
@@ -73,8 +79,13 @@ void osalInitTasks(void) {
     bdb_Init(taskID++);
     zclApp_Init(taskID++);
     zclApp_Init_2(taskID++);
-#if defined( TFT3IN5 )
+#if defined(TFT3IN5)
+#if defined(RTP_XPT2046)
     xpt2046_Init(taskID++);
+#endif  
+#if defined(CTP_FT6236)
+    ft6236_Init(taskID++);
+#endif 
 #if defined(BREAKOUT)
     breakout_Init(taskID++);
 #endif

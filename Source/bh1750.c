@@ -117,15 +117,17 @@ void bh1850_Write(uint8 mode) {
 
 void bh1750_WaitUs(uint16 microSecs) {
   while(microSecs--) {
-    /* 32 NOPs == 1 usecs */
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
-    asm("nop"); asm("nop");
+    asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
   }
 }
 
-void bh1750_WaitMs(uint32_t period) { bh1750_WaitUs(period * 1000); }
+void bh1750_WaitMs(unsigned int delaytime) { 
+  while(delaytime--)
+  {
+    uint16 microSecs = 1000;
+    while(microSecs--)
+    {
+      asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop"); asm("nop");
+    }
+  }
+}

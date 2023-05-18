@@ -39,6 +39,7 @@
 #ifdef EPD3IN7
 #define ZSTACK_DEVICE_BUILD (DEVICE_BUILD_ENDDEVICE)
 #endif
+
 #ifdef TFT3IN5
 //#define ZSTACK_DEVICE_BUILD (DEVICE_BUILD_ROUTER)
 #define ZSTACK_DEVICE_BUILD (DEVICE_BUILD_ENDDEVICE)
@@ -124,6 +125,10 @@ regardless of the number of reportable attributes in the cluster)
 #define HAL_LCD_PWM_PIN  4  // TFT PWM
 #define HAL_LCD_PWM_PORT1   // enable TFT PWM
 #define HAL_LCD_RGB_18BIT
+#define TFT_ILI9486
+//#define TFT_ILI9488
+//#define RTP_XPT2046
+#define CTP_FT6236
 #endif
 //i2c bh1750
 #define OCM_CLK_PORT 0
@@ -183,11 +188,9 @@ regardless of the number of reportable attributes in the cluster)
 //#define HAL_KEY_P0_INPUT_PINS BV(0)
 //#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE
 
-//#ifdef TFT3IN5
 #define HAL_KEY_P0_INPUT_PINS BV(4)
 //#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE
 #define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_FALLING_EDGE
-//#endif
 
 #define HAL_KEY_P1_INPUT_PINS BV(3)
 #define HAL_KEY_P1_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE

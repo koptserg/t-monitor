@@ -43,7 +43,7 @@ extern void bh1850_Write(uint8 mode);
 extern void bh1850_PowerDown(void);
 
 void bh1750_WaitUs(uint16 microSecs);
-void bh1750_WaitMs(uint32_t period);
+void bh1750_WaitMs(unsigned int delaytime);
 
 //const float BH1750_CONV_FACTOR = 1.2;
 #endif

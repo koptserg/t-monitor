@@ -5,12 +5,12 @@
 #include "tft3in5.h"
 #include "lcdgui.h"
 
-#define APP_TFT_TPIRQ_EVT               0x0001
+#define APP_TFT_RTP_IRQ_EVT               0x0001
 
 #define TP_PRESS_DOWN           0x80
 #define TP_PRESSED              0x40
 
-extern bool xpt2046_mode;
+extern bool tp_mode;
 	
 //Touch screen structure
 typedef struct {

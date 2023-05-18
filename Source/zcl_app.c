@@ -56,7 +56,12 @@
 #include "imagedata.h"
 #ifdef TFT3IN5
 #include "tft3in5.h"
+#ifdef RTP_XPT2046
 #include "xpt2046.h"
+#endif
+#ifdef CTP_FT6236
+#include "ft6236.h"
+#endif
 #include "lcdgui.h"
 #if defined(BREAKOUT) 
 #include "breakout.h"
@@ -171,7 +176,13 @@ uint16 zlcApp_ExtAddr = 0xFFFE;
 afAddrType_t inderect_DstAddr = {.addrMode = (afAddrMode_t)AddrNotPresent, .endPoint = 0, .addr.shortAddr = 0};
 
 #if defined(TFT3IN5)
+#if defined(RTP_XPT2046)
 extern TP_DRAW sTP_Draw;
+#endif //RTP_XPT2046
+#if defined(CTP_FT6236)
+extern CTP_DRAW sCTP_Draw;
+#endif //CTP_FT6236
+
 uint16 zclApp_lcd_background;
 bool zcl_game = 0;
 
@@ -357,7 +368,7 @@ void zclApp_Init(byte task_id) {
     bh1750Detect = bh1750_init(BH1750_mode);
     zclApp_bh1750setMTreg();
 
-    SCD4x_setTemperatureOffset(4.3, 1); // 5 grC 1 mc
+//    SCD4x_setTemperatureOffset(4.3, 1); // 5 grC 1 mc
 //    SCD4x_setSensorAltitude(270, 1); 
     scd4xDetect = SCD4x_begin(true, true, false);
     
@@ -1020,8 +1031,13 @@ static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
     zclFactoryResetter_HandleKeys(portAndAction, keyCode);
 #endif
     zclCommissioning_HandleKeys(portAndAction, keyCode); 
-#if defined(TFT3IN5)    
+#if defined(TFT3IN5)
+#if defined(RTP_XPT2046)    
     xpt2046_HandleKeys(portAndAction, keyCode);
+#endif
+#if defined(CTP_FT6236)    
+    ft6236_HandleKeys(portAndAction, keyCode);
+#endif
 #endif    
     if (portAndAction & HAL_KEY_PRESS) {
 //        LREPMaster("Key press\r\n");
@@ -3238,7 +3254,7 @@ void zclApp_keyprocessing(void) {
                   case 2:
 #if defined(BREAKOUT)                
                     zcl_game = 1;
-                    xpt2046_mode = 0;
+                    tp_mode = 0;
                     breakout_start();
 #endif
                     break;
@@ -3267,7 +3283,9 @@ void zclApp_keyprocessing(void) {
                     zclApp_create_butt_main(zclApp_menu); //ROTATE                   
                     break;
                   case 3:
+#if defined(RTP_XPT2046)                    
                     TP_Adjust();
+#endif //RTP_XPT2046
                     TftUpdateRefresh();
                     break;
                   case 4:
@@ -3865,12 +3883,11 @@ void zclApp_keyprocessing(void) {
 
 void zclApp_TPkeyprocessing(void) {          
           if (!zcl_game){
-            xpt2046_mode = 1;
-//            xpt2046_mode = 0;
+            tp_mode = 1;
             zclApp_keyprocessing();
           } else {
 #if defined(BREAKOUT)
-            xpt2046_mode = 0;
+            tp_mode = 0;
             breakout_keyprocessing();
             TftUpdateRefresh(); 
 #endif // BREAKOUT 

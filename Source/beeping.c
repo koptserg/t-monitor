@@ -14,7 +14,7 @@
 #include "songdata.h"
 
 static void beeping_initTimer1(void);
-static void beep(uint16 freq, uint32 duration);
+static void beep(uint32 freq, uint32 duration);
 static void beeping_seq_play(const uint16* song_buffer, uint16 w, uint8 tempo);
 static void DelayMs(uint32 delaytime);
 
@@ -26,7 +26,7 @@ uint8 beeping_TaskId = 0;
 void beeping_Init(uint8 task_id) {
     beeping_TaskId = task_id;
     beeping_initTimer1();
-//    beeping_seq_start();
+//    beep(400, 0);
 }
 
 uint16 beeping_event_loop(uint8 task_id, uint16 events) {
@@ -66,26 +66,19 @@ static void beeping_initTimer1(void){
   P0SEL |= 0x08; // p0.3 periferal
 }
 
-/*
-T1CC0x = 0x4E20 Dec: 20000    100Hz   10000us
-T1CC0x = 0x2710 Dec: 10000    200Hz    5000us
-T1CC0x = 0x0190 Dec:   400   5000Hz     200us
-*/
-static void beep(uint16 freq, uint32 duration){
-//  uint16 freq = 5000; //Hz
-//  uint16 tfreq = (uint16)((1/(float)freq)/ 0.0000005);
-  uint16 tfreq = (uint16)(2000000/freq);
+// frequency range 32 - 8000000 Hz
+static void beep(uint32 freq, uint32 duration){
+  uint16 tfreq;
+  if (freq <= 32768) {
+    tfreq = (uint16)(2000000/freq);
+  } else {
+    tfreq = (uint16)(16000000/freq);
+  }
   uint8  tfreq_l = (uint8)tfreq;
   uint8  tfreq_h = (uint8)(tfreq >> 8);
   uint16 tduty = tfreq/2;
   uint8  tduty_l = (uint8)tduty;
   uint8  tduty_h = (uint8)(tduty >> 8);
-/*  
-//  P0DIR |= 0x08; // p0.3 output
-  PERCFG &= ~0x40; //select of alternative 1 for timer 1
-  P2DIR = (P2DIR & ~0xC0) | 0x80; // priority timer 1 channels 0 1
-  P0SEL |= 0x08; // p0.3 periferal
-*/ 
   
   T1CTL &= ~(BV(1) | BV(0)); // Operation is suspended timer 1 (if it was running)
   
@@ -98,9 +91,13 @@ static void beep(uint16 freq, uint32 duration){
   T1CCTL1 = 0x1c; //00: No capture
                   //1: Compare mode
                   //011: Set output on compare-up, clear on compare-down in up-and-down mode. Otherwise set output on compare, clear on 0.
-  T1CTL |= (BV(2) | 0x03); //11: Up-and-down, repeatedly count from 0x0000 to T1CC0 and from T1CC0 down to 0x0000.
-                //00: Tick frequency / 8
-  
+  if (freq <= 32768) {
+    T1CTL |= (BV(2) | 0x03); //11: Up-and-down, repeatedly count from 0x0000 to T1CC0 and from T1CC0 down to 0x0000.
+                             //01: Tick frequency / 8
+  } else {
+    T1CTL = (0x03);          //11: Up-and-down, repeatedly count from 0x0000 to T1CC0 and from T1CC0 down to 0x0000.
+                             //00: Tick frequency / 1
+  }
   osal_start_timerEx(beeping_TaskId, APP_BEEPING_DURATION_EVT, duration);
 }
 

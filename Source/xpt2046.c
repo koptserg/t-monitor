@@ -1,5 +1,13 @@
+/*
+  XPT2046 RTP SPI driver for CC2530 
+  Product: https://aliexpress.ru/item/1005001989363608.html
+           https://www.waveshare.com/3.5inch-tft-touch-shield.htm
+  Written by Koptyakov Sergey 
+  From source https://www.waveshare.com/wiki/File:3.5inch_TFT_Touch_Shield_Code.7z                                                            
+*/
 
 #include <stdlib.h>
+#if defined(RTP_XPT2046)
 
 #include "Debug.h"
 #include "xpt2046.h"
@@ -15,9 +23,11 @@
 
 extern LCD_DIS sLCD_DIS;
 static TP_DEV sTP_DEV;
+
 TP_DRAW sTP_Draw;
+
 static bool tp_pres = 1;
-bool xpt2046_mode = 1;
+bool tp_mode = 1;
 
 static void DelayMs(unsigned int delaytime);
 static void DelayUs(uint16 microSecs);
@@ -56,8 +66,8 @@ void xpt2046_Init(uint8 task_id) {
 
 uint16 xpt2046_event_loop(uint8 task_id, uint16 events) {
 //     TP_Adjust();
-     if (events & APP_TFT_TPIRQ_EVT) {
-        LREPMaster("APP_TFT_TPIRQ_EVT\r\n");
+     if (events & APP_TFT_RTP_IRQ_EVT) {
+        LREPMaster("APP_TFT_RTP_IRQ_EVT\r\n");
           uint8 press_down = TP_Scan(0);
           
 //          LREP("Xpoint=%d Ypoint=%d\r\n", sTP_Draw.Xpoint, sTP_Draw.Ypoint);
@@ -69,7 +79,7 @@ uint16 xpt2046_event_loop(uint8 task_id, uint16 events) {
          
          zclApp_TPkeyprocessing();
         
-        return (events ^ APP_TFT_TPIRQ_EVT);
+        return (events ^ APP_TFT_RTP_IRQ_EVT);
     }
     
     return 0;
@@ -82,13 +92,13 @@ void xpt2046_HandleKeys(uint8 portAndAction, uint8 keyCode) {
 //        LREPMaster("Key press PORT0\r\n");       
         if (contact){
           if (tp_pres){
-            if (xpt2046_mode) {
-              osal_start_timerEx(xpt2046_TaskId, APP_TFT_TPIRQ_EVT, 10); // 100
+            if (tp_mode) {
+              osal_start_timerEx(xpt2046_TaskId, APP_TFT_RTP_IRQ_EVT, 10); // 100
             } else {
-              osal_start_timerEx(xpt2046_TaskId, APP_TFT_TPIRQ_EVT, 10);
+              osal_start_timerEx(xpt2046_TaskId, APP_TFT_RTP_IRQ_EVT, 10);
             }
           }
-          if (xpt2046_mode) {
+          if (tp_mode) {
             tp_pres = 0;
           }
         } else {
@@ -845,3 +855,5 @@ void TP_Init( LCD_SCAN_DIR Lcd_ScanDir )
 
   TP_Read_ADC_XY(&sTP_DEV.Xpoint, &sTP_DEV.Ypoint);
 }
+
+#endif //RTP_XPT2046

@@ -1,3 +1,11 @@
+/*
+  ILI9486/ILI9488 SPI driver for CC2530 
+  Product: https://aliexpress.ru/item/1005001989363608.html
+           https://www.waveshare.com/3.5inch-tft-touch-shield.htm
+           https://aliexpress.ru/item/1005005174685600.html
+  Written by Koptyakov Sergey 
+  From source https://www.waveshare.com/wiki/File:3.5inch_TFT_Touch_Shield_Code.7z                                                            
+*/
 
 #include <stdlib.h>
 
@@ -23,7 +31,12 @@ static void LCD_WriteReg(uint8 Reg);
 static void LCD_WriteData(uint8 Data);
 //static void LCD_Write_AllData(uint16 Data, uint32 DataLen);
 static void LCD_Reset(void);
-static void LCD_InitReg(void);
+#ifdef TFT_ILI9486
+static void LCD_InitReg_ILI9486(void);
+#endif
+#ifdef TFT_ILI9488
+static void LCD_InitReg_ILI9488(void);
+#endif
 
 static void LCD_SetWindow(POINT Xstart, POINT Ystart, POINT Xend, POINT Yend);
 //static void LCD_SetCursor(POINT Xpoint, POINT Ypoint);
@@ -71,7 +84,8 @@ static void LCD_Write_AllData(uint16 Data, uint32 DataLen)
 function:
 		Common register initialization
 *******************************************************************************/
-static void LCD_InitReg(void)
+#ifdef TFT_ILI9486 
+static void LCD_InitReg_ILI9486(void) // ILI9486
 {
 
     LCD_WriteReg(0XF9);
@@ -182,7 +196,100 @@ static void LCD_InitReg(void)
 #endif    
 
 }
+#endif
+#ifdef TFT_ILI9488
+static void LCD_InitReg_ILI9488(void) // ILI9488_CMI35IPS
+{	
+    LCD_WriteReg(0xE0); //P-Gamma
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x13);
+    LCD_WriteData(0x18);
+    LCD_WriteData(0x04);
+    LCD_WriteData(0x0F);
+    LCD_WriteData(0x06);
+    LCD_WriteData(0x3A);
+    LCD_WriteData(0x56);
+    LCD_WriteData(0x4D);
+    LCD_WriteData(0x03);
+    LCD_WriteData(0x0A);
+    LCD_WriteData(0x06);
+    LCD_WriteData(0x30);
+    LCD_WriteData(0x3E);
+    LCD_WriteData(0x0F);
 
+    LCD_WriteReg(0XE1); //N-Gamma
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x13);
+    LCD_WriteData(0x18);
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x11);
+    LCD_WriteData(0x06);
+    LCD_WriteData(0x38);
+    LCD_WriteData(0x34);
+    LCD_WriteData(0x4D);
+    LCD_WriteData(0x06);
+    LCD_WriteData(0x0D);
+    LCD_WriteData(0x0B);
+    LCD_WriteData(0x31);
+    LCD_WriteData(0x37);
+    LCD_WriteData(0x0F); 
+
+    LCD_WriteReg(0XC0);   //Power Control 1
+    LCD_WriteData(0x18); //Vreg1out
+    LCD_WriteData(0x17); //Verg2out
+
+    LCD_WriteReg(0xC1);   //Power Control 2
+    LCD_WriteData(0x41); //VGH,VGL
+
+    LCD_WriteReg(0xC5);   //Power Control 3
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x1A); //Vcom
+    LCD_WriteData(0x80);
+
+    LCD_WriteReg(0x36);
+    LCD_WriteData(0x48);  // MY MX MV ML BGR MH HF VF  4A     48  08
+    //Write_D(0xE8);  // MY MX MV ML BGR MH X X
+                    // MY Row Address Order
+                    // MX Column Address Order
+                    // MV Row / Column Exchange
+                    // ML Vertical Refresh Order
+                    // (0=RGB color filter panel, 1=BGR color filter panel)
+                    // MH Horizontal Refresh ORDER
+                    // Horizontal Flip x
+                    // Vertical Flip  y
+
+    LCD_WriteReg(0XB0);   // Interface Mode Control
+    LCD_WriteData(0x00);
+
+    LCD_WriteReg(0xB1);   //Frame rate
+    LCD_WriteData(0xA0); //60Hz
+
+    LCD_WriteReg(0xB4);   //Display Inversion Control
+    LCD_WriteData(0x02); //2-dot
+
+    LCD_WriteReg(0XB6);   //RGB/MCU Interface Control
+    LCD_WriteData(0x02); //MCU RGB
+    LCD_WriteData(0x02); //Source,Gate scan dieection
+
+    LCD_WriteReg(0XE9);    // Set Image Function
+    LCD_WriteData(0x00);  //disable 24 bit data input
+
+    LCD_WriteReg(0xF7);    // Adjust Control
+    LCD_WriteData(0xA9);
+    LCD_WriteData(0x51);
+    
+    LCD_WriteReg(0X3A);	//Set Interface Pixel Format
+#ifdef HAL_LCD_RGB_18BIT
+    LCD_WriteData(0x66);
+#else
+    LCD_WriteData(0x55);
+#endif
+
+//    LCD_WriteReg(0x20); // Display Inversion OFF    
+//    LCD_WriteReg(0x21); // Display Inversion ON	  
+
+}
+#endif
 /********************************************************************************
 function:	Set the display scan and color transfer modes
 parameter:
@@ -263,8 +370,13 @@ void LCD_Init(LCD_SCAN_DIR LCD_ScanDir, uint16 LCD_BLval)
     LCD_SetBackLight(LCD_BLval);
     
     //Set the initialization register
-    LCD_InitReg();
-
+#ifdef TFT_ILI9486    
+    LCD_InitReg_ILI9486();
+#endif
+#ifdef TFT_ILI9488     
+    LCD_InitReg_ILI9488();
+#endif
+    
     //Set the display scan and color transfer modes
     LCD_SetGramScanWay( LCD_ScanDir);
     DelayMs(200);

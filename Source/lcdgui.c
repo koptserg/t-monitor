@@ -4,8 +4,12 @@
 #include "fonts.h"
 #include "tft3in5.h"
 #include "utils.h"
+#if defined(RTP_XPT2046)
 #include "xpt2046.h"
-
+#endif
+#if defined(CTP_FT6236)
+#include "ft6236.h"
+#endif
 extern LCD_DIS sLCD_DIS;
 extern BUTTON sButton[];
 
@@ -822,8 +826,15 @@ void drawButton(uint8 i, bool inverted) {
 
 }
 
+#if defined(RTP_XPT2046)
 extern TP_DRAW sTP_Draw;
+#endif
 
+#if defined(CTP_FT6236)
+extern CTP_DRAW sTP_Draw;
+#endif
+
+#if defined(RTP_XPT2046) || defined(CTP_FT6236)
 int8 pressButton(void){
   for (uint8 i = 0; i<BUTTON_COUNT_MAX; i++) {
             if (sButton[i].x1 < sTP_Draw.Xpoint && sTP_Draw.Xpoint < sButton[i].x1+sButton[i].w &&
@@ -835,3 +846,4 @@ int8 pressButton(void){
   }
   return -1;
 }
+#endif
