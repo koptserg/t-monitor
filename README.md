@@ -1,8 +1,8 @@
 # t-monitor
 # Hardware
-![](/images/photo_2022-08-05_13-31-22.jpg)
-![](/images/photo_2023-05-18_21-18-38.jpg)
-![](/images/photo_2023-02-22_18-39-42.jpg)
-![](/images/photo_2023-02-22_18-40-48.jpg)
-![](/images/photo_2023-02-22_18-40-54.jpg)
-![](/images/photo_2022-12-21_22-11-59.jpg)
+![](/images/photo_2023-11-14_19-35-57.jpg)
+![](/images/photo_2023-11-14_19-35-57_2.jpg)
+![](/images/photo_2023-11-14_19-35-56.jpg)
+![](/images/photo_2023-11-14_19-35-56_2.jpg)
+![](/images/photo_2023-11-14_19-35-57_3.jpg)
+![](/images/photo_2023-11-14_19-35-57_4.jpg)
