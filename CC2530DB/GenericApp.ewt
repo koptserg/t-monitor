@@ -2258,6 +2258,12 @@
             <name>$PROJ_DIR$\..\Source\imagedata.h</name>
         </file>
         <file>
+            <name>$PROJ_DIR$\..\Source\ina219.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\Source\ina219.h</name>
+        </file>
+        <file>
             <name>$PROJ_DIR$\..\Source\lcdgui.c</name>
         </file>
         <file>
