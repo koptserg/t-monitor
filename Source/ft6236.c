@@ -75,7 +75,7 @@ void ft6236_HandleKeys(uint8 portAndAction, uint8 keyCode) {
         if (contact){
           if (tp_pres){
             if (tp_mode) {
-              osal_start_timerEx(ft6236_TaskId, APP_TFT_CTP_IRQ_EVT, 1);
+              osal_start_timerEx(ft6236_TaskId, APP_TFT_CTP_IRQ_EVT, 30); //1
             } else {
               osal_start_reload_timer(ft6236_TaskId, APP_TFT_CTP_IRQ_EVT, 30);
             }

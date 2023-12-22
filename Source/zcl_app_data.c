@@ -50,6 +50,11 @@ uint16 zclApp_bh1750IlluminanceSensor_MeasuredValue = 0;
 float zclApp_scd4xCO2Sensor_MeasuredValue = 0.0;
 bool zclApp_scd4xCO2Sensor_ForcedRecalibration = 0;
 
+uint16 zclApp_MainsVoltage = 50; // measured in units of 100mV
+uint16 zclApp_MainsFrequency = 0; // In the case of a DC supply, this attribute SHALL also have the value zero.
+uint16 zclApp_BatAhrRating = 300; // measured in units of 10mAHr
+uint8 zclApp_BatRatedVoltage = 37; // measured in units of 100mV
+
 uint8 zclApp_BatteryVoltage = 0xff;
 uint8 zclApp_BatteryPercentageRemainig = 0xff;
 
@@ -75,7 +80,7 @@ uint8 zclApp_Occupied = 0;
 #define DEFAULT_MsHumidityPeriod 10
 #define DEFAULT_MsIlluminancePeriod 10
 #define DEFAULT_CO2Period 10
-#define DEFAULT_CfgBatteryPeriod 30 // min
+#define DEFAULT_CfgBatteryPeriod 1 //30 // min
 #define DEFAULT_HvacUiDisplayMode 0x22 // 0 - invert, 1 - rotate, 2 - backlight, 3 - none //0 - invert, 1 - not invert
                                        // 4 - blue, 5 - red, 6 - green, 7 - none
 application_config_t zclApp_Config = {.PirOccupiedToUnoccupiedDelay = DEFAULT_PirOccupiedToUnoccupiedDelay,
@@ -104,7 +109,8 @@ const uint8 zclApp_StackVersion = 4;
 //{lenght, 'd', 'a', 't', 'a'}
 const uint8 zclApp_ManufacturerName[] = {9, 'm', 'o', 'd', 'k', 'a', 'm', '.', 'r', 'u'};
 const uint8 zclApp_ModelId[] = {16, 'D', 'I', 'Y', 'R', 'u', 'Z', '_', 'T', '-','M', 'o', 'n', 'i', 't', 'o', 'r'};
-const uint8 zclApp_PowerSource = POWER_SOURCE_BATTERY;
+//const uint8 zclApp_PowerSource = POWER_SOURCE_BATTERY;
+const uint8 zclApp_PowerSource = POWER_SOURCE_SECONDARY | POWER_SOURCE_DC;
 
 /*********************************************************************
  * ATTRIBUTE DEFINITIONS - Uses REAL cluster IDs
@@ -121,9 +127,13 @@ CONST zclAttrRec_t zclApp_AttrsFirstEP[] = {
     {BASIC, {ATTRID_BASIC_POWER_SOURCE, ZCL_DATATYPE_ENUM8, R, (void *)&zclApp_PowerSource}},
     {BASIC, {ATTRID_BASIC_SW_BUILD_ID, ZCL_DATATYPE_CHAR_STR, R, (void *)zclApp_DateCode}},
     {BASIC, {ATTRID_CLUSTER_REVISION, ZCL_DATATYPE_UINT16, R, (void *)&zclApp_clusterRevision_all}},   
-    
+
+    {POWER_CFG, {ATTRID_POWER_CFG_MAINS_VOLTAGE, ZCL_UINT16, RR, (void *)&zclApp_MainsVoltage}},
+    {POWER_CFG, {ATTRID_POWER_CFG_MAINS_FREQUENCY, ZCL_UINT16, RR, (void *)&zclApp_MainsFrequency}},      
     {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_VOLTAGE, ZCL_UINT8, RR, (void *)&zclApp_BatteryVoltage}},
     {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING, ZCL_UINT8, RR, (void *)&zclApp_BatteryPercentageRemainig}},
+    {POWER_CFG, {ATTRID_POWER_CFG_BAT_AHR_RATING, ZCL_UINT16, RR, (void *)&zclApp_BatAhrRating}},
+    {POWER_CFG, {ATTRID_POWER_CFG_BAT_RATED_VOLTAGE, ZCL_UINT8, RR, (void *)&zclApp_BatRatedVoltage}},
     {POWER_CFG, {ATTRID_POWER_CFG_BATTERY_PERIOD, ZCL_UINT16, RRW, (void *)&zclApp_Config.CfgBatteryPeriod}},
     
     {ONOFF, {ATTRID_ON_OFF, ZCL_BOOLEAN, RR, (void *)&zclApp_Occupied_OnOff}},

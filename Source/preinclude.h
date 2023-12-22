@@ -32,7 +32,7 @@
 
 #elif defined(HAL_BOARD_CHDTECH_DEV)
 // #define DO_DEBUG_UART
-#define DO_DEBUG_MT
+//#define DO_DEBUG_MT
 
 #endif
 
@@ -128,7 +128,7 @@ regardless of the number of reportable attributes in the cluster)
 #define TFT_ILI9486
 //#define TFT_ILI9488
 //#define RTP_XPT2046
-#define CTP_FT6236
+//#define CTP_FT6236
 #endif
 //i2c bh1750
 #define OCM_CLK_PORT 0
@@ -185,11 +185,9 @@ regardless of the number of reportable attributes in the cluster)
 #define APP_COMMISSIONING_BY_LONG_PRESS TRUE
 #define APP_COMMISSIONING_BY_LONG_PRESS_PORT 0x04 //port2
 
-//#define HAL_KEY_P0_INPUT_PINS BV(0)
-//#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE
-
+//#define HAL_KEY_P0_INPUT_PINS BV(2)
 #define HAL_KEY_P0_INPUT_PINS BV(4)
-//#define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_RISING_EDGE
+//#define HAL_KEY_P0_INPUT_PINS (BV(4) | BV(2))
 #define HAL_KEY_P0_INPUT_PINS_EDGE HAL_KEY_FALLING_EDGE
 
 #define HAL_KEY_P1_INPUT_PINS BV(3)

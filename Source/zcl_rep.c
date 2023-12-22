@@ -249,23 +249,39 @@ void zclRep_BatteryReport(void) {
 #if BDB_REPORTING
     bdb_RepChangedAttrValue(1, POWER_CFG, ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING);
 #else
-    const uint8 NUM_ATTRIBUTES = 3;
+    const uint8 NUM_ATTRIBUTES = 7;
     zclReportCmd_t *pReportCmd;
     pReportCmd = osal_mem_alloc(sizeof(zclReportCmd_t) + (NUM_ATTRIBUTES * sizeof(zclReport_t)));
     if (pReportCmd != NULL) {
         pReportCmd->numAttr = NUM_ATTRIBUTES;
+        
+        pReportCmd->attrList[0].attrID = ATTRID_POWER_CFG_MAINS_VOLTAGE;
+        pReportCmd->attrList[0].dataType = ZCL_DATATYPE_UINT16;
+        pReportCmd->attrList[0].attrData = (void *)(&zclApp_MainsVoltage);
+        
+        pReportCmd->attrList[1].attrID = ATTRID_POWER_CFG_MAINS_FREQUENCY;
+        pReportCmd->attrList[1].dataType = ZCL_DATATYPE_UINT16;
+        pReportCmd->attrList[1].attrData = (void *)(&zclApp_MainsFrequency);
 
-        pReportCmd->attrList[0].attrID = ATTRID_POWER_CFG_BATTERY_VOLTAGE;
-        pReportCmd->attrList[0].dataType = ZCL_DATATYPE_UINT8;
-        pReportCmd->attrList[0].attrData = (void *)(&zclApp_BatteryVoltage);
+        pReportCmd->attrList[2].attrID = ATTRID_POWER_CFG_BATTERY_VOLTAGE;
+        pReportCmd->attrList[2].dataType = ZCL_DATATYPE_UINT8;
+        pReportCmd->attrList[2].attrData = (void *)(&zclApp_BatteryVoltage);
 
-        pReportCmd->attrList[1].attrID = ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING;
-        pReportCmd->attrList[1].dataType = ZCL_DATATYPE_UINT8;
-        pReportCmd->attrList[1].attrData = (void *)(&zclApp_BatteryPercentageRemainig);
+        pReportCmd->attrList[3].attrID = ATTRID_POWER_CFG_BATTERY_PERCENTAGE_REMAINING;
+        pReportCmd->attrList[3].dataType = ZCL_DATATYPE_UINT8;
+        pReportCmd->attrList[3].attrData = (void *)(&zclApp_BatteryPercentageRemainig);
+        
+        pReportCmd->attrList[4].attrID = ATTRID_POWER_CFG_BAT_AHR_RATING;
+        pReportCmd->attrList[4].dataType = ZCL_DATATYPE_UINT16;
+        pReportCmd->attrList[4].attrData = (void *)(&zclApp_BatAhrRating);
+        
+        pReportCmd->attrList[5].attrID = ATTRID_POWER_CFG_BAT_RATED_VOLTAGE;
+        pReportCmd->attrList[5].dataType = ZCL_DATATYPE_UINT8;
+        pReportCmd->attrList[5].attrData = (void *)(&zclApp_BatRatedVoltage);
 
-        pReportCmd->attrList[2].attrID = ATTRID_POWER_CFG_BATTERY_PERIOD;
-        pReportCmd->attrList[2].dataType = ZCL_DATATYPE_UINT16;
-        pReportCmd->attrList[2].attrData = (void *)(&zclApp_Config.CfgBatteryPeriod);
+        pReportCmd->attrList[6].attrID = ATTRID_POWER_CFG_BATTERY_PERIOD;
+        pReportCmd->attrList[6].dataType = ZCL_DATATYPE_UINT16;
+        pReportCmd->attrList[6].attrData = (void *)(&zclApp_Config.CfgBatteryPeriod);
 
         afAddrType_t inderect_DstAddr = {.addrMode = (afAddrMode_t)AddrNotPresent, .endPoint = 0, .addr.shortAddr = 0};
         zcl_SendReportCmd(1, &inderect_DstAddr, POWER_CFG, pReportCmd, ZCL_FRAME_CLIENT_SERVER_DIR, TRUE, bdb_getZCLFrameCounter());

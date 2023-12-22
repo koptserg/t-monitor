@@ -48,6 +48,7 @@
 #include "utils.h"
 #include "version.h"
 #include "beeping.h"
+#include "ina219.h"
 
 #ifdef EPD3IN7
 #include "epd3in7.h"
@@ -223,7 +224,8 @@ static void zclApp_bh1750setMTreg(void);
 static void zclApp_MotionPullUpDown(void);
 static void zclApp_ConfigDisplay(void);
 static void zclApp_scd4xReadCO2(void);
-static void zclApp_ReadBattery(void);
+//static void zclApp_ReadBattery(void);
+static void zclApp_ReadIna219(void);
 
 #if defined(EPD3IN7)
 static void zclApp_EpdUpdateClock(void);
@@ -283,6 +285,7 @@ void zclApp_RequestBind(void);
 #ifdef IEEE_ADDR_REQ
 void zclApp_RequestAddr(uint16 nwkaddr);
 #endif
+
 static void zclApp_ProcessIncomingMsg( zclIncomingMsg_t *msg );
 static void zclApp_AttrIncomingReport( zclIncomingMsg_t *pInMsg );
 static void zclApp_DefaultRspCmd( zclIncomingMsg_t *pInMsg );
@@ -371,6 +374,8 @@ void zclApp_Init(byte task_id) {
 //    SCD4x_setTemperatureOffset(4.3, 1); // 5 grC 1 mc
 //    SCD4x_setSensorAltitude(270, 1); 
     scd4xDetect = SCD4x_begin(true, true, false);
+    
+    ina219_init();
     
     // this is important to allow connects throught routers
     // to make this work, coordinator should be compiled with this flag #define TP2_LEGACY_ZC
@@ -858,20 +863,13 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         fullupdate_hour = fullupdate_hour +1;
         if (fullupdate_hour == 5){ // over 5 min clear          
           zclApp_EpdUpdateClock();          
-          fullupdate_hour = 0;
-/*          
-          for(uint8 i = 0; i <= 2; i++ ){
-            EpdtestRefresh(i);
-          }
-*/          
+          fullupdate_hour = 0;         
         }       
         EpdRefresh();
 #endif // EPD3IN7
 #if defined(TFT3IN5)        
-//        TftRefresh();
           TftTimeDateWeek(); // update time, date, weekday
 #endif        
-//      }
         return (events ^ APP_REPORT_CLOCK_EVT);
     }
 
@@ -918,7 +916,8 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
     if (events & APP_REPORT_BATTERY_EVT) {
         LREPMaster("APP_REPORT_BATTERY_EVT\r\n");
         report = 0;
-        zclApp_ReadBattery();
+//        zclApp_ReadBattery();
+        zclApp_ReadIna219();
 
         return (events ^ APP_REPORT_BATTERY_EVT);
     }
@@ -951,7 +950,7 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         zclGeneral_SendOnOff_CmdOn(zclApp_ThirdEP.EndPoint, &inderect_DstAddr, TRUE, bdb_getZCLFrameCounter());
 //        bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
         zclRep_Occupancy();
-        
+
         return (events ^ APP_MOTION_ON_EVT);
     }
     
@@ -962,7 +961,8 @@ uint16 zclApp_event_loop(uint8 task_id, uint16 events) {
         zclApp_Occupied_OnOff = 0;
         zclGeneral_SendOnOff_CmdOff(zclApp_ThirdEP.EndPoint, &inderect_DstAddr, TRUE, bdb_getZCLFrameCounter());
 //        bdb_RepChangedAttrValue(zclApp_ThirdEP.EndPoint, OCCUPANCY, ATTRID_MS_OCCUPANCY_SENSING_CONFIG_OCCUPANCY);
-        zclRep_Occupancy();       
+        zclRep_Occupancy();
+ 
         return (events ^ APP_MOTION_OFF_EVT);
     }
     
@@ -1021,6 +1021,8 @@ uint16 zclApp_event_loop_2(uint8 task_id, uint16 events) {
     return 0;
 }
 
+#define HAL_KEY_CODE_RELEASE_KEY HAL_KEY_CODE_NOKEY
+byte currentKeyCode = 0;
 static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
 //    LREP("zclApp_HandleKeys portAndAction=0x%X keyCode=0x%X\r\n", portAndAction, keyCode);
 #if APP_COMMISSIONING_BY_LONG_PRESS == TRUE
@@ -1038,15 +1040,16 @@ static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
 #if defined(CTP_FT6236)    
     ft6236_HandleKeys(portAndAction, keyCode);
 #endif
-#endif    
+#endif  
     if (portAndAction & HAL_KEY_PRESS) {
 //        LREPMaster("Key press\r\n");
     }
 
     bool contact = portAndAction & HAL_KEY_PRESS ? TRUE : FALSE;
+    
     if (portAndAction & HAL_KEY_PORT0) {
-        LREPMaster("Key press PORT0\r\n");
-
+        LREPMaster("Key press PORT0\r\n"); 
+      
     } else if (portAndAction & HAL_KEY_PORT1) {     
         LREPMaster("Key press PORT1\r\n");
         if (!contact) {
@@ -1072,8 +1075,6 @@ static void zclApp_HandleKeys(byte portAndAction, byte keyCode) {
      } else if (portAndAction & HAL_KEY_PORT2) {
        LREPMaster("Key press PORT2\r\n");
        if (contact) {
-//          HalLedSet(HAL_LED_1, HAL_LED_MODE_BLINK);
-//          IEN2 &= ~HAL_KEY_BIT4; // disable port1 int
           osal_start_timerEx(zclApp_TaskID, APP_REPORT_EVT, 200);
        } else {
 //          IEN2 |= HAL_KEY_BIT4; // enable port1 int
@@ -1095,9 +1096,10 @@ static void zclApp_ReadSensors(void) {
      * */
   if (report == 1) {
     switch (currentSensorsReadingPhase++) {
-    case 0:
-//        HalLedSet(HAL_LED_1, HAL_LED_MODE_BLINK);    
-      zclApp_ReadBattery();      
+    case 0:  
+//      zclApp_ReadBattery();
+        zclApp_ReadIna219();
+        
         break;
     case 4:
       if (scd4xDetect == 1) {
@@ -1159,6 +1161,46 @@ static void zclApp_ReadSensors(void) {
   zclApp_StartReloadTimer();
 }
 
+static void zclApp_ReadIna219(void) {
+  float BusVoltage_V = ina219_getBusVoltage_V();
+  float ShuntVoltage_mV = ina219_getShuntVoltage_mV();
+  float Current_mA = ina219_getCurrent_mA();
+  float Power_mW = ina219_getPower_mW();
+  
+#if defined(TFT3IN5)
+ 
+  if (!zcl_game && zclApp_menu == 0){
+        LCD_SetArealColor(0, 32, 100, 112, zclApp_lcd_background);
+        
+        LREP("BusVoltage_V=%f\r\n", BusVoltage_V);
+        GUI_DisNumDP(0, 32, (uint32)(BusVoltage_V*100), 2, &Font16, zclApp_lcd_background, WHITE);
+        
+        LREP("P02=%d\r\n", (uint8)(P0_2));
+        GUI_DisNumDP(0, 32+16, (uint32)(P0_2), 0, &Font16, zclApp_lcd_background, WHITE);
+/*         
+        LREP("ShuntVoltage_mV=%f\r\n", ShuntVoltage_mV);
+        GUI_DisNumDP(0, 32+16, (uint32)(ShuntVoltage_mV*-100), 2, &Font16, zclApp_lcd_background, WHITE);
+        
+        LREP("Current_mA=%f\r\n", Current_mA);
+        GUI_DisNumDP(0, 32+32, (uint32)(Current_mA*-100), 2, &Font16, zclApp_lcd_background, WHITE);
+        
+        LREP("Power_mW=%f\r\n", Power_mW);
+        GUI_DisNumDP(0, 32+48, (uint32)(Power_mW*100), 2, &Font16, zclApp_lcd_background, WHITE);
+*/        
+  }
+
+#endif
+  uint16 millivolts = (uint32)(BusVoltage_V*1000);
+  uint8 volt8 = (uint8)(millivolts / 100);
+    if ((millivolts - (volt8 * 100)) > 50) {
+        zclApp_BatteryVoltage = volt8 + 1;
+    } else {
+        zclApp_BatteryVoltage = volt8;
+    }
+  zclApp_BatteryPercentageRemainig = (uint8)mapRange(3500, 4200, 0.0, 200.0, millivolts);
+  zclRep_BatteryReport();
+}
+
 static void zclApp_scd4xReadCO2(void) {
   
         uint16 scd4x_co2_16 = (uint32)SCD4x_getCO2();
@@ -1178,14 +1220,14 @@ static void zclApp_scd4xReadCO2(void) {
         }
 
 }
-
+/*
 static void zclApp_ReadBattery(void) {
   uint16 millivolts = getBatteryVoltage();
   zclApp_BatteryVoltage = getBatteryVoltageZCL(millivolts);
   zclApp_BatteryPercentageRemainig = getBatteryRemainingPercentageZCLCR2032(millivolts);
   zclRep_BatteryReport();
 }
-
+*/
 static void zclApp_ConfigDisplay(void) {
 //  bdb_RepChangedAttrValue(zclApp_FirstEP.EndPoint, HVAC_UI_CONFIG, ATTRID_HVAC_THERMOSTAT_UI_CONFIG_DISPLAY_MODE);
   zclRep_ConfigDisplay();
@@ -1231,6 +1273,11 @@ static void zclApp_bh1750ReadLumosity(void) {
     }
     if (zclApp_Config.HvacUiDisplayMode & DM_BACKLIGHT){
       levelPWM = MAX_LEVEL_PWM;
+    }
+    if (bdbAttributes.bdbNodeIsOnANetwork == 1) {
+      if (zclApp_Occupied == 0){
+        levelPWM = 0;
+      }
     }
     InitLedPWM(254-levelPWM);    
 #endif
@@ -3382,7 +3429,8 @@ void zclApp_keyprocessing(void) {
                 switch (butt){
                   case 0:
                     report = 1;
-                    zclApp_ReadBattery();
+//                    zclApp_ReadBattery();
+                    zclApp_ReadIna219();
                     report = 0;
                     break;
                   case 1:
@@ -3820,7 +3868,8 @@ void zclApp_keyprocessing(void) {
                       break;                  
                   }
                   report = 1;
-                  zclApp_ReadBattery();
+//                  zclApp_ReadBattery();
+                  zclApp_ReadIna219();
                   report = 0;
                   break;
                 case 20:

@@ -40,7 +40,7 @@ extern "C" {
 #define APP_REPORT_CO2_EVT              0x0010
    
 // Application Events
-#define APP2_REPORT_EVT                  0x0001
+#define APP2_REPORT_EVT                 0x0001
 
 /*********************************************************************
  * MACROS
@@ -146,6 +146,11 @@ extern SimpleDescriptionFormat_t zclApp_SecondEP;
 extern SimpleDescriptionFormat_t zclApp_ThirdEP;
 extern SimpleDescriptionFormat_t zclApp_FourthEP;
 extern SimpleDescriptionFormat_t zclApp_FifthEP;
+
+extern uint16 zclApp_MainsVoltage;
+extern uint16 zclApp_MainsFrequency;
+extern uint16 zclApp_BatAhrRating;
+extern uint8 zclApp_BatRatedVoltage;
 
 extern uint8 zclApp_BatteryVoltage;
 extern uint8 zclApp_BatteryPercentageRemainig;
